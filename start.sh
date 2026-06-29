@@ -28,8 +28,16 @@ elif [ "$COMMAND" = "run" ]; then
     fi
     source venv/bin/activate
     
-    echo 'Starting server on 0.0.0.0:12345...'
-    uvicorn app:app --host 0.0.0.0 --port 12345
+    PORT=12345
+    if [ -f .env ]; then
+        ENV_PORT=$(grep -E '^PORT=' .env | cut -d '=' -f 2 | tr -d '"'\' | tr -d ' ')
+        if [ -n "$ENV_PORT" ]; then
+            PORT=$ENV_PORT
+        fi
+    fi
+    
+    echo "Starting server on 0.0.0.0:$PORT..."
+    uvicorn app:app --host 0.0.0.0 --port $PORT
     
 else
     echo "Usage: $0 {install|run}"

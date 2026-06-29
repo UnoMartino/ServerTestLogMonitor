@@ -32,6 +32,7 @@ Create a `.env` file in the root directory to define where the server logs are s
 ```bash
 # .env
 FTP_ROOT="/path/to/your/FTP_Directory"
+PORT=12345
 ```
 
 *Note: The application expects the FTP root to contain directories matching hardware serial numbers, and inside those, timestamped run folders (e.g., `FTP_ROOT/SERIAL_NUMBER/260629_223807/1-raport-glowny.txt`). Grouped subdirectories (e.g., `FTP_ROOT/GROUP/SERIAL_NUMBER`) are also supported.*
@@ -62,10 +63,10 @@ Once installed, you can start the web server for normal use without reinstalling
 
 ### 3. Usage
 
-Once the server says `Uvicorn running on http://0.0.0.0:12345`, open your web browser and navigate to:
+Once the server says `Uvicorn running on http://0.0.0.0:<PORT>`, open your web browser and navigate to:
 
 ```
-http://localhost:12345
+http://localhost:<PORT>
 ```
 
 - **Dashboard Tab**: Use the top-left search bar to find and select a server. Switch between historical runs and read direct file outputs in the Log Viewer.
