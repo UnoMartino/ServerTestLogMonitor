@@ -1,0 +1,7 @@
+venv/
+__pycache__/
+*.pyc
+.env
+ipmi_passwords.json
+mock_ftp/
+.DS_Store

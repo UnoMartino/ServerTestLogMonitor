@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Server Test Log Monitor</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-content">
+            <h1>Server Monitor</h1>
+            <div class="tabs">
+                <button class="tab-btn active" data-tab="dashboard">Dashboard</button>
+                <button class="tab-btn" data-tab="dhcp">DHCP Leases</button>
+            </div>
+        </div>
+    </nav>
+
+    <main class="container">
+        <!-- Dashboard Tab -->
+        <div id="dashboard" class="tab-content active">
+            <div class="search-bar">
+                <div class="search-container">
+                    <input type="search" id="serverSearch" class="styled-input search-input" placeholder="Search serial numbers..." autocomplete="off">
+                    <ul id="serverList" class="custom-dropdown hidden"></ul>
+                </div>
+                <button id="refreshServersBtn" class="btn">Refresh List</button>
+            </div>
+            
+            <div id="dashboardContent" class="dashboard-grid hidden">
+                <div class="card">
+                    <h2>System</h2>
+                    <div id="sysData" class="data-group"></div>
+                </div>
+                <div class="card">
+                    <h2>Chassis</h2>
+                    <div id="chassisData" class="data-group"></div>
+                </div>
+                <div class="card">
+                    <h2>Motherboard</h2>
+                    <div id="mbData" class="data-group"></div>
+                </div>
+                <div class="card">
+                    <h2>RAM</h2>
+                    <div id="ramData" class="data-group"></div>
+                </div>
+                <div class="card">
+                    <h2>BMC/IPMI</h2>
+                    <div id="bmcData" class="data-group"></div>
+                </div>
+                <div class="card">
+                    <h2>CPU</h2>
+                    <div id="cpuData" class="data-group"></div>
+                </div>
+                
+                <div class="card full-width">
+                    <h2>Log File Viewer</h2>
+                    <div class="log-controls">
+                        <select id="runSelect" class="styled-select" style="margin-right: 12px;"></select>
+                        <select id="logFileSelect" class="styled-select"></select>
+                    </div>
+                    <pre id="logViewer" class="log-viewer"></pre>
+                </div>
+            </div>
+        </div>
+
+        <!-- DHCP Tab -->
+        <div id="dhcp" class="tab-content">
+            <div class="card full-width">
+                <div class="card-header">
+                    <h2>DHCP Leases</h2>
+                    <span class="auto-refresh-indicator">Auto-refreshing every 5s</span>
+                </div>
+                <div class="table-container">
+                    <table class="styled-table">
+                        <thead>
+                            <tr>
+                                <th>MAC Address</th>
+                                <th>IP Address</th>
+                                <th>Hostname</th>
+                                <th>Manufacturer</th>
+                                <th>IPMI Link</th>
+                                <th>Password Manager</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dhcpTableBody">
+                            <!-- Populated by JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script src="app.js"></script>
+</body>
+</html>
