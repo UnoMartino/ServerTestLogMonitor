@@ -323,3 +323,22 @@ h1 {
     font-size: 12px;
     color: #86868b;
 }
+
+.metadata-form {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin-top: 12px;
+}
+
+.metadata-form .form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.metadata-form label {
+    font-size: 13px;
+    color: #86868b;
+    font-weight: 500;
+}

@@ -173,6 +173,13 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!res.ok) throw new Error('Data not found');
             const data = await res.json();
             
+            if (data.metadata) {
+                document.getElementById('metaCustomer').value = data.metadata.customer || '';
+                document.getElementById('metaSO').value = data.metadata.so_number || '';
+                document.getElementById('metaServerName').value = data.metadata.server_name || '';
+                document.getElementById('metaNotes').value = data.metadata.notes || '';
+            }
+            
             // Populate cards
             populateGroup('sysData', data.system);
             populateGroup('chassisData', data.chassis);
@@ -256,6 +263,47 @@ document.addEventListener('DOMContentLoaded', () => {
             logViewer.textContent = 'Error loading log file: ' + e.message;
         }
     }
+
+    document.getElementById('saveMetadataBtn').addEventListener('click', async () => {
+        if (!currentSelectedSerial || !currentSelectedRun) return;
+        
+        const payload = {
+            customer: document.getElementById('metaCustomer').value,
+            so_number: document.getElementById('metaSO').value,
+            server_name: document.getElementById('metaServerName').value,
+            notes: document.getElementById('metaNotes').value
+        };
+        
+        try {
+            const btn = document.getElementById('saveMetadataBtn');
+            btn.textContent = 'Saving...';
+            btn.disabled = true;
+            
+            const res = await fetch(`/api/servers/${btoa(currentSelectedSerial)}/runs/${currentSelectedRun}/metadata`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            
+            if (!res.ok) throw new Error('Failed to save metadata');
+            
+            setTimeout(() => {
+                btn.textContent = 'Saved!';
+                setTimeout(() => {
+                    btn.textContent = 'Save Metadata';
+                    btn.disabled = false;
+                }, 1500);
+            }, 300);
+            
+        } catch (e) {
+            console.error(e);
+            alert('Failed to save metadata.');
+            const btn = document.getElementById('saveMetadataBtn');
+            btn.textContent = 'Save Metadata';
+            btn.disabled = false;
+        }
+    });
+
 
     refreshServersBtn.addEventListener('click', loadServers);
     

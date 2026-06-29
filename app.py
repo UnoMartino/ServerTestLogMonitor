@@ -184,10 +184,20 @@ def list_server_runs(serial_b64: str):
     run_list = [{"run": r, "date": format_run_date(r)} for r in runs]
     return {"runs": run_list}
 
+from pydantic import BaseModel
+import json
+
+class MetadataModel(BaseModel):
+    customer: str
+    so_number: str
+    server_name: str
+    notes: str
+
 @app.get("/api/servers/{serial_b64}/runs/{run}")
 def get_server_details(serial_b64: str, run: str):
     serial = decode_serial(serial_b64)
     run_dir = os.path.join(FTP_ROOT, serial, run)
+    serial_dir = os.path.join(FTP_ROOT, serial)
     if not os.path.isdir(run_dir):
         raise HTTPException(status_code=404, detail="Run not found")
         
@@ -198,7 +208,33 @@ def get_server_details(serial_b64: str, run: str):
     with open(raport_path, 'r', encoding='utf-8', errors='ignore') as f:
         content = f.read()
         
-    return parse_raport(content)
+    data = parse_raport(content)
+    
+    meta_path = os.path.join(serial_dir, "metadata.json")
+    if os.path.exists(meta_path):
+        try:
+            with open(meta_path, 'r') as f:
+                data['metadata'] = json.load(f)
+        except:
+            data['metadata'] = {"customer": "", "so_number": "", "server_name": "", "notes": ""}
+    else:
+        data['metadata'] = {"customer": "", "so_number": "", "server_name": "", "notes": ""}
+        
+    return data
+
+@app.post("/api/servers/{serial_b64}/runs/{run}/metadata")
+def update_metadata(serial_b64: str, run: str, metadata: MetadataModel):
+    serial = decode_serial(serial_b64)
+    serial_dir = os.path.join(FTP_ROOT, serial)
+    run_dir = os.path.join(serial_dir, run)
+    if not os.path.isdir(run_dir):
+        raise HTTPException(status_code=404, detail="Run not found")
+        
+    meta_path = os.path.join(serial_dir, "metadata.json")
+    with open(meta_path, 'w') as f:
+        json.dump(metadata.model_dump(), f)
+    
+    return {"status": "success"}
 
 @app.get("/api/servers/{serial_b64}/runs/{run}/logs")
 def list_server_logs(serial_b64: str, run: str):
