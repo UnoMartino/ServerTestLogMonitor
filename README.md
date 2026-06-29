@@ -38,20 +38,27 @@ FTP_ROOT="/path/to/your/FTP_Directory"
 
 ### 2. Installation & Running
 
-The project comes with a monolithic startup script that handles virtual environments, dependencies, and launching the server.
+The project comes with a startup script that handles virtual environments, dependencies, and launching the server. It accepts two commands: `install` and `run`.
 
-Make the script executable (if it isn't already) and run it:
+Make the script executable (if it isn't already):
 
 ```bash
 chmod +x start.sh
-./start.sh
 ```
 
-**What `start.sh` does:**
-1. Verifies the OS and installs `python3-venv` if running on Linux.
-2. Creates an isolated Python virtual environment (`venv/`).
-3. Installs dependencies from `requirements.txt` (FastAPI, Uvicorn, Python-Dotenv).
-4. Launches the web server on port `12345`.
+**First-time Setup or Updates:**
+To install all system requirements, set up the virtual environment, and install dependencies, use the `install` command:
+
+```bash
+./start.sh install
+```
+
+**Running the Server:**
+Once installed, you can start the web server for normal use without reinstalling packages by using the `run` command:
+
+```bash
+./start.sh run
+```
 
 ### 3. Usage
 
