@@ -330,7 +330,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const lastOctet = parseInt(parts[3], 10);
             const paddedPort = String(lastOctet).padStart(3, '0');
             const port = `10${paddedPort}`;
-            return `<a href="https://${ip}:${port}" target="_blank" class="ipmi-link">https://${ip}:${port}</a>`;
+            return `<a href="https://192.168.2.95:${port}" target="_blank" class="ipmi-link">https://192.168.2.95:${port}</a>`;
         }
         return "-";
     }
