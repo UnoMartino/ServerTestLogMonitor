@@ -164,12 +164,22 @@ def list_servers():
     serial_dirs = find_serial_dirs(FTP_ROOT)
     for serial in serial_dirs:
         latest_run = get_latest_run_dir(serial)
+        
+        meta_path = os.path.join(FTP_ROOT, serial, "metadata.json")
+        metadata = {"customer": "", "so_number": "", "server_name": "", "notes": ""}
+        if os.path.exists(meta_path):
+            try:
+                with open(meta_path, 'r') as f:
+                    metadata = json.load(f)
+            except:
+                pass
+                
         if latest_run:
             run_name = os.path.basename(latest_run)
             date_str = format_run_date(run_name)
-            server_list.append({"serial": serial, "date": date_str, "raw": run_name})
+            server_list.append({"serial": serial, "date": date_str, "raw": run_name, "metadata": metadata})
         else:
-            server_list.append({"serial": serial, "date": "No runs", "raw": ""})
+            server_list.append({"serial": serial, "date": "No runs", "raw": "", "metadata": metadata})
                 
     server_list.sort(key=lambda x: x["raw"], reverse=True)
     return {"servers": server_list}

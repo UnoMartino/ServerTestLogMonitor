@@ -152,7 +152,14 @@ document.addEventListener('DOMContentLoaded', () => {
             renderServerList(allServers, "");
             return;
         }
-        const filtered = allServers.filter(s => s.serial.toLowerCase().includes(term) || s.date.toLowerCase().includes(term));
+        const filtered = allServers.filter(s => {
+            const m = s.metadata || {};
+            return s.serial.toLowerCase().includes(term) || 
+                   s.date.toLowerCase().includes(term) ||
+                   (m.customer && m.customer.toLowerCase().includes(term)) ||
+                   (m.so_number && m.so_number.toLowerCase().includes(term)) ||
+                   (m.server_name && m.server_name.toLowerCase().includes(term));
+        });
         renderServerList(filtered, term);
     });
 
