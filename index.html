@@ -10,9 +10,12 @@
     <nav class="navbar">
         <div class="nav-content">
             <h1>Server Monitor</h1>
-            <div class="tabs">
-                <button class="tab-btn active" data-tab="dashboard">Dashboard</button>
-                <button class="tab-btn" data-tab="dhcp">DHCP Leases</button>
+            <div style="display: flex; align-items: center; gap: 16px;">
+                <div class="tabs">
+                    <button class="tab-btn active" data-tab="dashboard">Dashboard</button>
+                    <button class="tab-btn" data-tab="dhcp">DHCP Leases</button>
+                </div>
+                <a href="http://192.168.2.95:26000" class="btn" style="text-decoration: none;" target="_blank">PXE Boot</a>
             </div>
         </div>
     </nav>
