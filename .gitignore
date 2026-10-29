@@ -3,5 +3,6 @@ __pycache__/
 *.pyc
 .env
 ipmi_passwords.json
+ipmi_links.json
 mock_ftp/
 .DS_Store

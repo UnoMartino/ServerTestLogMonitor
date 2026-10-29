@@ -15,320 +15,95 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // --- Server Dashboard Logic ---
+    // --- State ---
+    let allServers = [];
+    let currentDhcpLeases = [];
+    let currentSelectedSerial = null;
+    let currentSelectedRun = null;
+    let currentSelectedLogFile = null;
+    let checkedSerials = new Set();
+    let expandedGroups = new Set();
+    let visibleSerials = [];
+
+    // --- DOM Elements ---
     const serverSearch = document.getElementById('serverSearch');
+    const clearSearchBtn = document.getElementById('clearSearchBtn');
     const serverList = document.getElementById('serverList');
     const refreshServersBtn = document.getElementById('refreshServersBtn');
+    const batchEditBtn = document.getElementById('batchEditBtn');
+    const batchCountBadge = document.getElementById('batchCountBadge');
+    const linkIpmiBtn = document.getElementById('linkIpmiBtn');
+    const selectAllVisibleCheck = document.getElementById('selectAllVisibleCheck');
+    const serverCountLabel = document.getElementById('serverCountLabel');
+
+    const emptyServerState = document.getElementById('emptyServerState');
     const dashboardContent = document.getElementById('dashboardContent');
-    const logFileSelect = document.getElementById('logFileSelect');
     const logViewer = document.getElementById('logViewer');
-    
-    let allServers = [];
-    let currentSelectedSerial = null;
 
-    async function loadServers() {
-        try {
-            const res = await fetch('/api/servers');
-            const data = await res.json();
-            allServers = data.servers; // Array of {serial, date, raw}
-            
-            renderServerList(allServers);
-            
-            // Keep current selection loaded if it exists
-            if (currentSelectedSerial && allServers.find(s => s.serial === currentSelectedSerial)) {
-                // keep data loaded
-            } else {
-                currentSelectedSerial = null;
-                serverSearch.value = '';
-                dashboardContent.classList.add('hidden');
-            }
-        } catch (e) {
-            console.error('Failed to load servers', e);
-        }
+    // Custom Dropdown Elements (Run & Log File)
+    const runSelectWrapper = document.getElementById('runSelectWrapper');
+    const runSelectTrigger = document.getElementById('runSelectTrigger');
+    const runSelectLabel = document.getElementById('runSelectLabel');
+    const runSelectMenu = document.getElementById('runSelectMenu');
+
+    const logFileSelectWrapper = document.getElementById('logFileSelectWrapper');
+    const logFileSelectTrigger = document.getElementById('logFileSelectTrigger');
+    const logFileSelectLabel = document.getElementById('logFileSelectLabel');
+    const logFileSelectMenu = document.getElementById('logFileSelectMenu');
+
+    // Filter Checkboxes
+    const filterFieldSerial = document.getElementById('filterFieldSerial');
+    const filterFieldCustomer = document.getElementById('filterFieldCustomer');
+    const filterFieldSO = document.getElementById('filterFieldSO');
+    const filterFieldServerName = document.getElementById('filterFieldServerName');
+    const filterFieldNotes = document.getElementById('filterFieldNotes');
+    const filterStatusOnline = document.getElementById('filterStatusOnline');
+    const filterStatusLinked = document.getElementById('filterStatusLinked');
+    const filterStatusMetadata = document.getElementById('filterStatusMetadata');
+
+    // Server Active IPMI Card Elements
+    const serverIpmiCard = document.getElementById('serverIpmiCard');
+    const serverIpmiMac = document.getElementById('serverIpmiMac');
+    const serverIpmiIp = document.getElementById('serverIpmiIp');
+    const serverIpmiHostname = document.getElementById('serverIpmiHostname');
+    const serverIpmiLinkCell = document.getElementById('serverIpmiLinkCell');
+    const serverIpmiPassword = document.getElementById('serverIpmiPassword');
+
+    // Disks Elements
+    const sataDiskCount = document.getElementById('sataDiskCount');
+    const nvmeDiskCount = document.getElementById('nvmeDiskCount');
+    const disksContainer = document.getElementById('disksContainer');
+
+    // --- Helper Functions ---
+    function escapeHtml(str) {
+        if (str === null || str === undefined) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
     }
 
-    function renderServerList(servers, searchTerm = "") {
-        serverList.innerHTML = '';
-        
-        const groups = {};
-        const ungrouped = [];
-        
-        servers.forEach(server => {
-            const parts = server.serial.split('/');
-            if (parts.length > 1) {
-                const groupName = parts[0];
-                if (!groups[groupName]) groups[groupName] = [];
-                groups[groupName].push(server);
-            } else {
-                ungrouped.push(server);
-            }
-        });
-
-        const forceExpand = searchTerm.length > 0;
-
-        for (const [groupName, items] of Object.entries(groups)) {
-            const headerLi = document.createElement('li');
-            headerLi.innerHTML = `
-                <span class="item-serial" style="font-weight: 600;">📁 ${groupName}</span>
-                <span class="group-arrow">${forceExpand ? '▲' : '▼'}</span>
-            `;
-            headerLi.style.background = 'rgba(0,0,0,0.03)';
-            
-            const childLis = items.map(server => {
-                const childName = server.serial.substring(groupName.length + 1);
-                const childLi = document.createElement('li');
-                childLi.innerHTML = `<span class="item-serial" style="padding-left: 20px;">↳ ${childName}</span><span class="item-date">${server.date}</span>`;
-                if (!forceExpand) childLi.classList.add('hidden');
-                childLi.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    selectServer(server.serial);
-                });
-                return childLi;
-            });
-            
-            headerLi.addEventListener('click', (e) => {
-                e.stopPropagation();
-                if (childLis.length === 0) return;
-                const isCurrentlyHidden = childLis[0].classList.contains('hidden');
-                childLis.forEach(c => c.classList.toggle('hidden', !isCurrentlyHidden));
-                headerLi.querySelector('.group-arrow').textContent = isCurrentlyHidden ? '▲' : '▼';
-            });
-            
-            serverList.appendChild(headerLi);
-            childLis.forEach(c => serverList.appendChild(c));
-        }
-
-        ungrouped.forEach(server => {
-            const li = document.createElement('li');
-            li.innerHTML = `<span class="item-serial">${server.serial}</span><span class="item-date">${server.date}</span>`;
-            li.addEventListener('click', (e) => {
-                e.stopPropagation();
-                selectServer(server.serial);
-            });
-            serverList.appendChild(li);
-        });
+    function encodeSerial(serial) {
+        return btoa(serial);
     }
 
-    let currentSelectedRun = null;
-    const runSelect = document.getElementById('runSelect');
-
-    async function selectServer(serial) {
-        currentSelectedSerial = serial;
-        serverSearch.value = serial;
-        serverList.classList.add('hidden');
-        
-        try {
-            const res = await fetch(`/api/servers/${btoa(serial)}/runs`);
-            if (!res.ok) throw new Error('No runs found');
-            const data = await res.json();
-            
-            runSelect.innerHTML = '';
-            data.runs.forEach(run => {
-                const opt = document.createElement('option');
-                opt.value = run.run;
-                opt.textContent = `${run.date} (${run.run})`;
-                runSelect.appendChild(opt);
-            });
-            
-            if (data.runs.length > 0) {
-                const latestRun = data.runs[0].run;
-                runSelect.value = latestRun;
-                currentSelectedRun = latestRun;
-                loadServerData(serial, latestRun);
-            } else {
-                dashboardContent.classList.add('hidden');
-            }
-        } catch (e) {
-            console.error('Failed to load server runs', e);
-            dashboardContent.classList.add('hidden');
-        }
+    function isMacOnline(mac) {
+        if (!mac) return null;
+        const norm = mac.trim().toLowerCase();
+        return currentDhcpLeases.find(l => (l.mac || '').toLowerCase() === norm) || null;
     }
 
-    // Search input logic
-    serverSearch.addEventListener('input', (e) => {
-        const term = e.target.value.toLowerCase();
-        serverList.classList.remove('hidden');
-        if (!term) {
-            renderServerList(allServers, "");
-            return;
-        }
-        const filtered = allServers.filter(s => {
-            const m = s.metadata || {};
-            return s.serial.toLowerCase().includes(term) || 
-                   s.date.toLowerCase().includes(term) ||
-                   (m.customer && m.customer.toLowerCase().includes(term)) ||
-                   (m.so_number && m.so_number.toLowerCase().includes(term)) ||
-                   (m.server_name && m.server_name.toLowerCase().includes(term));
-        });
-        renderServerList(filtered, term);
-    });
-
-    serverSearch.addEventListener('focus', () => {
-        serverList.classList.remove('hidden');
-    });
-
-    // Hide list when clicking outside
-    document.addEventListener('click', (e) => {
-        if (!serverSearch.contains(e.target) && !serverList.contains(e.target)) {
-            serverList.classList.add('hidden');
-        }
-    });
-
-    async function loadServerData(serial, run) {
-        try {
-            const res = await fetch(`/api/servers/${btoa(serial)}/runs/${run}`);
-            if (!res.ok) throw new Error('Data not found');
-            const data = await res.json();
-            
-            if (data.metadata) {
-                document.getElementById('metaCustomer').value = data.metadata.customer || '';
-                document.getElementById('metaSO').value = data.metadata.so_number || '';
-                document.getElementById('metaServerName').value = data.metadata.server_name || '';
-                document.getElementById('metaNotes').value = data.metadata.notes || '';
-            }
-            
-            // Populate cards
-            populateGroup('sysData', data.system);
-            populateGroup('chassisData', data.chassis);
-            populateGroup('mbData', data.motherboard);
-            
-            const ramData = {
-                'Used Slots': data.ram.used,
-                'Total Slots': data.ram.total
-            };
-            populateGroup('ramData', ramData);
-            
-            const bmcData = {
-                'Firmware': data.bmc
-            };
-            populateGroup('bmcData', bmcData);
-            
-            // CPU needs a bit custom handling since it's an array
-            const cpuHtml = data.cpu.map(c => `<div><span class="data-value" style="text-align: left;">${c}</span></div>`).join('');
-            document.getElementById('cpuData').innerHTML = cpuHtml;
-            
-            dashboardContent.classList.remove('hidden');
-            
-            // Load log files list
-            loadLogFiles(serial, run);
-            
-        } catch (e) {
-            console.error('Failed to load server data', e);
-            dashboardContent.classList.add('hidden');
-        }
+    function hasAnyMetadata(meta) {
+        if (!meta) return false;
+        return Boolean(
+            (meta.customer && meta.customer.trim()) ||
+            (meta.so_number && meta.so_number.trim()) ||
+            (meta.server_name && meta.server_name.trim()) ||
+            (meta.notes && meta.notes.trim())
+        );
     }
-
-    function populateGroup(elementId, obj) {
-        const el = document.getElementById(elementId);
-        el.innerHTML = '';
-        for (const [key, value] of Object.entries(obj)) {
-            // format key from 'numer_seryjny' to 'Numer Seryjny'
-            const formattedKey = key.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-            el.innerHTML += `
-                <div>
-                    <span class="data-label">${formattedKey}</span>
-                    <span class="data-value">${value}</span>
-                </div>
-            `;
-        }
-    }
-
-    async function loadLogFiles(serial, run) {
-        try {
-            const res = await fetch(`/api/servers/${btoa(serial)}/runs/${run}/logs`);
-            const data = await res.json();
-            
-            logFileSelect.innerHTML = '';
-            data.files.forEach(f => {
-                const opt = document.createElement('option');
-                opt.value = f;
-                opt.textContent = f;
-                logFileSelect.appendChild(opt);
-            });
-            
-            // Select 1-raport-glowny.txt by default if it exists
-            if (data.files.includes('1-raport-glowny.txt')) {
-                logFileSelect.value = '1-raport-glowny.txt';
-            }
-            
-            if (logFileSelect.value) {
-                loadLogContent(serial, run, logFileSelect.value);
-            }
-        } catch (e) {
-            console.error('Failed to load log files', e);
-        }
-    }
-
-    async function loadLogContent(serial, run, filename) {
-        try {
-            logViewer.textContent = 'Loading...';
-            const res = await fetch(`/api/servers/${btoa(serial)}/runs/${run}/logs/${filename}`);
-            if (!res.ok) throw new Error('File not found');
-            const text = await res.text();
-            logViewer.textContent = text;
-        } catch (e) {
-            logViewer.textContent = 'Error loading log file: ' + e.message;
-        }
-    }
-
-    document.getElementById('saveMetadataBtn').addEventListener('click', async () => {
-        if (!currentSelectedSerial || !currentSelectedRun) return;
-        
-        const payload = {
-            customer: document.getElementById('metaCustomer').value,
-            so_number: document.getElementById('metaSO').value,
-            server_name: document.getElementById('metaServerName').value,
-            notes: document.getElementById('metaNotes').value
-        };
-        
-        try {
-            const btn = document.getElementById('saveMetadataBtn');
-            btn.textContent = 'Saving...';
-            btn.disabled = true;
-            
-            const res = await fetch(`/api/servers/${btoa(currentSelectedSerial)}/runs/${currentSelectedRun}/metadata`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-            
-            if (!res.ok) throw new Error('Failed to save metadata');
-            
-            setTimeout(() => {
-                btn.textContent = 'Saved!';
-                setTimeout(() => {
-                    btn.textContent = 'Save Metadata';
-                    btn.disabled = false;
-                }, 1500);
-            }, 300);
-            
-        } catch (e) {
-            console.error(e);
-            alert('Failed to save metadata.');
-            const btn = document.getElementById('saveMetadataBtn');
-            btn.textContent = 'Save Metadata';
-            btn.disabled = false;
-        }
-    });
-
-
-    refreshServersBtn.addEventListener('click', loadServers);
-    
-    runSelect.addEventListener('change', (e) => {
-        if (currentSelectedSerial && e.target.value) {
-            currentSelectedRun = e.target.value;
-            loadServerData(currentSelectedSerial, currentSelectedRun);
-        }
-    });
-
-    logFileSelect.addEventListener('change', (e) => {
-        if (currentSelectedSerial && currentSelectedRun && e.target.value) {
-            loadLogContent(currentSelectedSerial, currentSelectedRun, e.target.value);
-        }
-    });
-
-    // --- DHCP Leases Logic ---
-    const dhcpTableBody = document.getElementById('dhcpTableBody');
 
     function formatIpmiLink(ip) {
         if (!ip || ip === "-") return "-";
@@ -342,6 +117,843 @@ document.addEventListener('DOMContentLoaded', () => {
         return "-";
     }
 
+    // --- Custom Dropdown Helpers ---
+    function closeAllCustomSelects() {
+        runSelectMenu.classList.add('hidden');
+        runSelectTrigger.classList.remove('open');
+        logFileSelectMenu.classList.add('hidden');
+        logFileSelectTrigger.classList.remove('open');
+    }
+
+    runSelectTrigger.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const isOpen = !runSelectMenu.classList.contains('hidden');
+        closeAllCustomSelects();
+        if (!isOpen) {
+            runSelectMenu.classList.remove('hidden');
+            runSelectTrigger.classList.add('open');
+        }
+    });
+
+    logFileSelectTrigger.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const isOpen = !logFileSelectMenu.classList.contains('hidden');
+        closeAllCustomSelects();
+        if (!isOpen) {
+            logFileSelectMenu.classList.remove('hidden');
+            logFileSelectTrigger.classList.add('open');
+        }
+    });
+
+    document.addEventListener('click', (e) => {
+        if (!runSelectWrapper.contains(e.target) && !logFileSelectWrapper.contains(e.target)) {
+            closeAllCustomSelects();
+        }
+    });
+
+    function populateCustomSelect(menuEl, labelEl, items, selectedValue, onSelect) {
+        menuEl.innerHTML = '';
+        const selectedItem = items.find(i => i.value === selectedValue) || items[0] || null;
+        labelEl.textContent = selectedItem ? selectedItem.label : '-';
+
+        items.forEach(item => {
+            const li = document.createElement('li');
+            li.className = `custom-select-item${item.value === (selectedItem ? selectedItem.value : '') ? ' selected' : ''}`;
+            li.textContent = item.label;
+            li.addEventListener('click', (e) => {
+                e.stopPropagation();
+                labelEl.textContent = item.label;
+                menuEl.querySelectorAll('.custom-select-item').forEach(el => el.classList.remove('selected'));
+                li.classList.add('selected');
+                closeAllCustomSelects();
+                onSelect(item.value);
+            });
+            menuEl.appendChild(li);
+        });
+    }
+
+    // --- Toolbar & Selection State ---
+    function updateToolbarState() {
+        const count = checkedSerials.size;
+        batchEditBtn.disabled = count < 2;
+        if (count > 0) {
+            batchCountBadge.textContent = count;
+            batchCountBadge.classList.remove('hidden');
+        } else {
+            batchCountBadge.classList.add('hidden');
+        }
+
+        linkIpmiBtn.disabled = !currentSelectedSerial;
+
+        if (visibleSerials.length === 0) {
+            selectAllVisibleCheck.checked = false;
+            selectAllVisibleCheck.indeterminate = false;
+        } else {
+            const checkedVisibleCount = visibleSerials.filter(s => checkedSerials.has(s)).length;
+            selectAllVisibleCheck.checked = checkedVisibleCount === visibleSerials.length;
+            selectAllVisibleCheck.indeterminate = checkedVisibleCount > 0 && checkedVisibleCount < visibleSerials.length;
+        }
+    }
+
+    // --- Filtering & Tree Rendering ---
+    function getFilteredServers() {
+        const term = serverSearch.value.trim().toLowerCase();
+        const bySerial = filterFieldSerial.checked;
+        const byCustomer = filterFieldCustomer.checked;
+        const bySO = filterFieldSO.checked;
+        const byServerName = filterFieldServerName.checked;
+        const byNotes = filterFieldNotes.checked;
+
+        const reqOnline = filterStatusOnline.checked;
+        const reqLinked = filterStatusLinked.checked;
+        const reqMetadata = filterStatusMetadata.checked;
+
+        return allServers.filter(s => {
+            const m = s.metadata || {};
+            const linkedMac = s.linked_mac || '';
+
+            if (reqLinked && !linkedMac) return false;
+            if (reqOnline && !isMacOnline(linkedMac)) return false;
+            if (reqMetadata && !hasAnyMetadata(m)) return false;
+
+            if (!term) return true;
+
+            const anyFieldChecked = bySerial || byCustomer || bySO || byServerName || byNotes;
+            if (!anyFieldChecked) {
+                return s.serial.toLowerCase().includes(term);
+            }
+
+            if (bySerial && s.serial.toLowerCase().includes(term)) return true;
+            if (byCustomer && m.customer && m.customer.toLowerCase().includes(term)) return true;
+            if (bySO && m.so_number && m.so_number.toLowerCase().includes(term)) return true;
+            if (byServerName && m.server_name && m.server_name.toLowerCase().includes(term)) return true;
+            if (byNotes && m.notes && m.notes.toLowerCase().includes(term)) return true;
+
+            return false;
+        });
+    }
+
+    function buildSubtitle(server) {
+        const m = server.metadata || {};
+        const parts = [];
+        if (m.customer) parts.push(m.customer);
+        if (m.so_number) parts.push(m.so_number);
+        if (m.server_name) parts.push(m.server_name);
+        return parts.join(' • ');
+    }
+
+    function createServerRowLi(server, displaySerial, isChild = false) {
+        const li = document.createElement('li');
+        const isSelected = server.serial === currentSelectedSerial;
+        const isChecked = checkedSerials.has(server.serial);
+        const linkedMac = server.linked_mac || '';
+        const lease = isMacOnline(linkedMac);
+
+        let statusDotHtml = '';
+        if (lease) {
+            statusDotHtml = `<span class="status-dot online" title="W sieci DHCP (${escapeHtml(lease.ip)} / ${escapeHtml(linkedMac)})"></span>`;
+        } else if (linkedMac) {
+            statusDotHtml = `<span class="status-dot linked-offline" title="Powiązany MAC (${escapeHtml(linkedMac)}) - poza siecią DHCP"></span>`;
+        }
+
+        const subtitle = buildSubtitle(server);
+        const subHtml = subtitle ? `<span class="item-sub" title="${escapeHtml(subtitle)}">${escapeHtml(subtitle)}</span>` : '';
+
+        const rowDiv = document.createElement('div');
+        rowDiv.className = `tree-row${isChild ? ' child-row' : ''}${isSelected ? ' active' : ''}`;
+        rowDiv.innerHTML = `
+            <div class="tree-item-left">
+                <input type="checkbox" class="tree-checkbox server-item-check" ${isChecked ? 'checked' : ''} title="Zaznacz do edycji grupowej">
+                <div class="tree-item-info">
+                    <div class="item-serial-row">
+                        <span class="item-serial">${escapeHtml(displaySerial)}</span>
+                        ${statusDotHtml}
+                    </div>
+                    ${subHtml}
+                </div>
+            </div>
+            <span class="item-date">${escapeHtml(server.date.split(' ')[0])}</span>
+        `;
+
+        const checkbox = rowDiv.querySelector('.server-item-check');
+        checkbox.addEventListener('click', (e) => {
+            e.stopPropagation();
+        });
+        checkbox.addEventListener('change', (e) => {
+            if (e.target.checked) {
+                checkedSerials.add(server.serial);
+            } else {
+                checkedSerials.delete(server.serial);
+            }
+            renderServerTree();
+        });
+
+        rowDiv.addEventListener('click', () => {
+            selectServer(server.serial);
+        });
+
+        li.appendChild(rowDiv);
+        return li;
+    }
+
+    function renderServerTree() {
+        const filtered = getFilteredServers();
+        visibleSerials = filtered.map(s => s.serial);
+        serverCountLabel.textContent = filtered.length;
+        serverList.innerHTML = '';
+
+        if (filtered.length === 0) {
+            const emptyLi = document.createElement('li');
+            emptyLi.className = 'tree-empty';
+            emptyLi.textContent = 'Brak serwerów spełniających kryteria.';
+            serverList.appendChild(emptyLi);
+            updateToolbarState();
+            return;
+        }
+
+        const groups = {};
+        const ungrouped = [];
+
+        filtered.forEach(server => {
+            const parts = server.serial.split('/');
+            if (parts.length > 1) {
+                const groupName = parts[0];
+                if (!groups[groupName]) groups[groupName] = [];
+                groups[groupName].push(server);
+            } else {
+                ungrouped.push(server);
+            }
+        });
+
+        const hasSearchOrFilter = serverSearch.value.trim().length > 0 ||
+            filterStatusOnline.checked || filterStatusLinked.checked || filterStatusMetadata.checked;
+
+        for (const [groupName, items] of Object.entries(groups)) {
+            const isExpanded = hasSearchOrFilter || expandedGroups.has(groupName) || items.some(s => s.serial === currentSelectedSerial);
+            const groupSerials = items.map(s => s.serial);
+            const checkedInGroup = groupSerials.filter(s => checkedSerials.has(s)).length;
+            const allGroupChecked = checkedInGroup === groupSerials.length && groupSerials.length > 0;
+            const someGroupChecked = checkedInGroup > 0 && checkedInGroup < groupSerials.length;
+
+            const headerLi = document.createElement('li');
+            const headerDiv = document.createElement('div');
+            headerDiv.className = 'tree-group-header';
+            headerDiv.innerHTML = `
+                <div class="tree-group-left">
+                    <input type="checkbox" class="tree-checkbox group-check" ${allGroupChecked ? 'checked' : ''} title="Zaznacz całą grupę">
+                    <span>${escapeHtml(groupName)} <small style="color: #86868b; font-weight: 500;">(${items.length})</small></span>
+                </div>
+                <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="#86868b" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="transform: rotate(${isExpanded ? '90deg' : '0deg'}); transition: transform 0.15s ease;">
+                    <path d="M6 4l4 4-4 4"/>
+                </svg>
+            `;
+
+            const groupCheckbox = headerDiv.querySelector('.group-check');
+            groupCheckbox.indeterminate = someGroupChecked;
+            groupCheckbox.addEventListener('click', (e) => {
+                e.stopPropagation();
+            });
+            groupCheckbox.addEventListener('change', (e) => {
+                if (e.target.checked) {
+                    groupSerials.forEach(s => checkedSerials.add(s));
+                } else {
+                    groupSerials.forEach(s => checkedSerials.delete(s));
+                }
+                renderServerTree();
+            });
+
+            headerDiv.addEventListener('click', () => {
+                if (expandedGroups.has(groupName)) {
+                    expandedGroups.delete(groupName);
+                } else {
+                    expandedGroups.add(groupName);
+                }
+                renderServerTree();
+            });
+
+            headerLi.appendChild(headerDiv);
+            serverList.appendChild(headerLi);
+
+            if (isExpanded) {
+                items.forEach(server => {
+                    const childName = server.serial.substring(groupName.length + 1);
+                    const childLi = createServerRowLi(server, `↳ ${childName}`, true);
+                    serverList.appendChild(childLi);
+                });
+            }
+        }
+
+        ungrouped.forEach(server => {
+            const li = createServerRowLi(server, server.serial, false);
+            serverList.appendChild(li);
+        });
+
+        updateToolbarState();
+    }
+
+    // --- Load Servers ---
+    async function loadServers() {
+        try {
+            const res = await fetch('/api/servers');
+            const data = await res.json();
+            allServers = data.servers || [];
+
+            const existingSet = new Set(allServers.map(s => s.serial));
+            for (const s of Array.from(checkedSerials)) {
+                if (!existingSet.has(s)) checkedSerials.delete(s);
+            }
+
+            if (currentSelectedSerial && !existingSet.has(currentSelectedSerial)) {
+                currentSelectedSerial = null;
+                currentSelectedRun = null;
+                dashboardContent.classList.add('hidden');
+                emptyServerState.classList.remove('hidden');
+            }
+
+            renderServerTree();
+            updateServerIpmiCard();
+        } catch (e) {
+            console.error('Failed to load servers', e);
+        }
+    }
+
+    // --- Select Server & Load Details ---
+    async function selectServer(serial) {
+        currentSelectedSerial = serial;
+        const parts = serial.split('/');
+        if (parts.length > 1) {
+            expandedGroups.add(parts[0]);
+        }
+        renderServerTree();
+
+        try {
+            const res = await fetch(`/api/servers/${encodeSerial(serial)}/runs`);
+            if (!res.ok) throw new Error('No runs found');
+            const data = await res.json();
+
+            const runs = data.runs || [];
+            if (runs.length > 0) {
+                const latestRun = runs[0].run;
+                currentSelectedRun = latestRun;
+                const runItems = runs.map(r => ({
+                    value: r.run,
+                    label: `${r.date} (${r.run})`
+                }));
+                populateCustomSelect(runSelectMenu, runSelectLabel, runItems, latestRun, (newRun) => {
+                    currentSelectedRun = newRun;
+                    loadServerData(serial, newRun);
+                });
+                await loadServerData(serial, latestRun);
+            } else {
+                dashboardContent.classList.add('hidden');
+                emptyServerState.classList.remove('hidden');
+            }
+        } catch (e) {
+            console.error('Failed to load server runs', e);
+            dashboardContent.classList.add('hidden');
+            emptyServerState.classList.remove('hidden');
+        }
+    }
+
+    function renderDisksSection(disks) {
+        const sataList = (disks && disks.sata) ? disks.sata : [];
+        const nvmeList = (disks && disks.nvme) ? disks.nvme : [];
+        const sataCountVal = (disks && typeof disks.sata_count === 'number') ? disks.sata_count : sataList.length;
+        const nvmeCountVal = (disks && typeof disks.nvme_count === 'number') ? disks.nvme_count : nvmeList.length;
+
+        sataDiskCount.textContent = sataCountVal;
+        nvmeDiskCount.textContent = nvmeCountVal;
+
+        const combined = [
+            ...sataList.map(d => ({ type: 'SATA/SAS', badgeClass: 'sata', ...d })),
+            ...nvmeList.map(d => ({ type: 'NVMe', badgeClass: 'nvme', ...d }))
+        ];
+
+        if (combined.length === 0) {
+            disksContainer.innerHTML = `<div style="color: #86868b; font-size: 13.5px; padding: 8px 0;">Brak wykrytych dysków SATA/SAS oraz NVMe w raporcie.</div>`;
+            return;
+        }
+
+        const rowsHtml = combined.map(d => `
+            <tr>
+                <td><span class="disk-type-badge ${d.badgeClass}">${escapeHtml(d.type)}</span></td>
+                <td style="font-family: monospace; color: #6e6e73;">${escapeHtml(d.device || '-')}</td>
+                <td style="font-weight: 500;">${escapeHtml(d.pn || 'N/A')}</td>
+                <td style="font-family: monospace; font-weight: 600;">${escapeHtml(d.sn || 'N/A')}</td>
+            </tr>
+        `).join('');
+
+        disksContainer.innerHTML = `
+            <div class="table-container">
+                <table class="styled-table">
+                    <thead>
+                        <tr>
+                            <th>Typ</th>
+                            <th>Urządzenie</th>
+                            <th>Part Number / Model (PN)</th>
+                            <th>Numer Seryjny (SN)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${rowsHtml}
+                    </tbody>
+                </table>
+            </div>
+        `;
+    }
+
+    function updateServerIpmiCard() {
+        if (!currentSelectedSerial) {
+            serverIpmiCard.classList.add('hidden');
+            return;
+        }
+        const serverObj = allServers.find(s => s.serial === currentSelectedSerial);
+        const linkedMac = serverObj ? (serverObj.linked_mac || '') : '';
+        if (!linkedMac) {
+            serverIpmiCard.classList.add('hidden');
+            return;
+        }
+
+        const activeLease = isMacOnline(linkedMac);
+        if (!activeLease) {
+            serverIpmiCard.classList.add('hidden');
+            return;
+        }
+
+        serverIpmiCard.classList.remove('hidden');
+        serverIpmiMac.textContent = activeLease.mac;
+        serverIpmiIp.textContent = activeLease.ip;
+        serverIpmiHostname.textContent = `Nazwa hosta: ${activeLease.hostname || '-'} | Producent: ${activeLease.manufacturer || '-'}`;
+        serverIpmiLinkCell.innerHTML = formatIpmiLink(activeLease.ip);
+        serverIpmiPassword.setAttribute('data-mac', activeLease.mac);
+
+        if (document.activeElement !== serverIpmiPassword) {
+            serverIpmiPassword.value = activeLease.password || '';
+        }
+    }
+
+    async function loadServerData(serial, run) {
+        try {
+            const res = await fetch(`/api/servers/${encodeSerial(serial)}/runs/${run}`);
+            if (!res.ok) throw new Error('Data not found');
+            const data = await res.json();
+
+            if (data.metadata) {
+                document.getElementById('metaCustomer').value = data.metadata.customer || '';
+                document.getElementById('metaSO').value = data.metadata.so_number || '';
+                document.getElementById('metaServerName').value = data.metadata.server_name || '';
+                document.getElementById('metaNotes').value = data.metadata.notes || '';
+            }
+
+            const serverIdx = allServers.findIndex(s => s.serial === serial);
+            if (serverIdx !== -1) {
+                if (data.metadata) allServers[serverIdx].metadata = data.metadata;
+                if (data.linked_mac !== undefined) allServers[serverIdx].linked_mac = data.linked_mac;
+            }
+
+            populateGroup('sysData', data.system);
+            populateGroup('chassisData', data.chassis);
+            populateGroup('mbData', data.motherboard);
+
+            populateGroup('ramData', {
+                'Zajęte sloty': data.ram.used,
+                'Wszystkie sloty': data.ram.total
+            });
+
+            populateGroup('bmcData', {
+                'Firmware': data.bmc,
+                'Powiązany MAC': data.linked_mac || 'Brak'
+            });
+
+            const cpuHtml = (data.cpu || []).map(c => `<div><span class="data-value" style="text-align: left;">${escapeHtml(c)}</span></div>`).join('');
+            document.getElementById('cpuData').innerHTML = cpuHtml || '<div><span class="data-value">N/A</span></div>';
+
+            renderDisksSection(data.disks);
+            updateServerIpmiCard();
+
+            emptyServerState.classList.add('hidden');
+            dashboardContent.classList.remove('hidden');
+
+            loadLogFiles(serial, run);
+        } catch (e) {
+            console.error('Failed to load server data', e);
+            dashboardContent.classList.add('hidden');
+            emptyServerState.classList.remove('hidden');
+        }
+    }
+
+    function populateGroup(elementId, obj) {
+        const el = document.getElementById(elementId);
+        el.innerHTML = '';
+        for (const [key, value] of Object.entries(obj || {})) {
+            const formattedKey = key.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+            el.innerHTML += `
+                <div>
+                    <span class="data-label">${escapeHtml(formattedKey)}</span>
+                    <span class="data-value">${escapeHtml(value)}</span>
+                </div>
+            `;
+        }
+    }
+
+    async function loadLogFiles(serial, run) {
+        try {
+            const res = await fetch(`/api/servers/${encodeSerial(serial)}/runs/${run}/logs`);
+            const data = await res.json();
+            const files = data.files || [];
+
+            const defaultFile = files.includes('1-raport-glowny.txt')
+                ? '1-raport-glowny.txt'
+                : (files[0] || '');
+
+            currentSelectedLogFile = defaultFile;
+            const fileItems = files.map(f => ({ value: f, label: f }));
+
+            populateCustomSelect(logFileSelectMenu, logFileSelectLabel, fileItems, defaultFile, (newFile) => {
+                currentSelectedLogFile = newFile;
+                loadLogContent(serial, run, newFile);
+            });
+
+            if (defaultFile) {
+                loadLogContent(serial, run, defaultFile);
+            } else {
+                logViewer.textContent = '';
+            }
+        } catch (e) {
+            console.error('Failed to load log files', e);
+        }
+    }
+
+    async function loadLogContent(serial, run, filename) {
+        try {
+            logViewer.textContent = 'Ładowanie...';
+            const res = await fetch(`/api/servers/${encodeSerial(serial)}/runs/${run}/logs/${filename}`);
+            if (!res.ok) throw new Error('Nie znaleziono pliku');
+            const text = await res.text();
+            logViewer.textContent = text;
+        } catch (e) {
+            logViewer.textContent = 'Błąd ładowania pliku logu: ' + e.message;
+        }
+    }
+
+    // --- Single Server Metadata Save ---
+    document.getElementById('saveMetadataBtn').addEventListener('click', async () => {
+        if (!currentSelectedSerial || !currentSelectedRun) return;
+
+        const payload = {
+            customer: document.getElementById('metaCustomer').value,
+            so_number: document.getElementById('metaSO').value,
+            server_name: document.getElementById('metaServerName').value,
+            notes: document.getElementById('metaNotes').value
+        };
+
+        const btn = document.getElementById('saveMetadataBtn');
+        try {
+            btn.textContent = 'Zapisywanie...';
+            btn.disabled = true;
+
+            const res = await fetch(`/api/servers/${encodeSerial(currentSelectedSerial)}/runs/${currentSelectedRun}/metadata`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (!res.ok) throw new Error('Failed to save metadata');
+
+            const srv = allServers.find(s => s.serial === currentSelectedSerial);
+            if (srv) srv.metadata = { ...payload };
+            renderServerTree();
+
+            setTimeout(() => {
+                btn.textContent = 'Zapisano!';
+                setTimeout(() => {
+                    btn.textContent = 'Zapisz';
+                    btn.disabled = false;
+                }, 1200);
+            }, 200);
+        } catch (e) {
+            console.error(e);
+            alert('Nie udało się zapisać danych.');
+            btn.textContent = 'Zapisz';
+            btn.disabled = false;
+        }
+    });
+
+    // --- Search Input & Clear Button Logic ---
+    function updateClearSearchButton() {
+        if (serverSearch.value.length > 0) {
+            clearSearchBtn.classList.remove('hidden');
+        } else {
+            clearSearchBtn.classList.add('hidden');
+        }
+    }
+
+    serverSearch.addEventListener('input', () => {
+        updateClearSearchButton();
+        renderServerTree();
+    });
+
+    clearSearchBtn.addEventListener('click', () => {
+        serverSearch.value = '';
+        updateClearSearchButton();
+        renderServerTree();
+        serverSearch.focus();
+    });
+
+    [
+        filterFieldSerial,
+        filterFieldCustomer,
+        filterFieldSO,
+        filterFieldServerName,
+        filterFieldNotes,
+        filterStatusOnline,
+        filterStatusLinked,
+        filterStatusMetadata
+    ].forEach(cb => {
+        cb.addEventListener('change', () => renderServerTree());
+    });
+
+    selectAllVisibleCheck.addEventListener('change', (e) => {
+        if (e.target.checked) {
+            visibleSerials.forEach(s => checkedSerials.add(s));
+        } else {
+            visibleSerials.forEach(s => checkedSerials.delete(s));
+        }
+        renderServerTree();
+    });
+
+    refreshServersBtn.addEventListener('click', async () => {
+        await loadDhcpLeases();
+        await loadServers();
+    });
+
+    // --- Batch Edit Metadata Modal Logic ---
+    const batchEditModal = document.getElementById('batchEditModal');
+    const closeBatchModalBtn = document.getElementById('closeBatchModalBtn');
+    const cancelBatchModalBtn = document.getElementById('cancelBatchModalBtn');
+    const saveBatchMetadataBtn = document.getElementById('saveBatchMetadataBtn');
+    const batchModalCount = document.getElementById('batchModalCount');
+    const batchSerialChips = document.getElementById('batchSerialChips');
+
+    const batchFields = [
+        { key: 'customer', inputId: 'batchMetaCustomer' },
+        { key: 'so_number', inputId: 'batchMetaSO' },
+        { key: 'server_name', inputId: 'batchMetaServerName' },
+        { key: 'notes', inputId: 'batchMetaNotes' }
+    ];
+
+    document.querySelectorAll('.batch-clear-check').forEach(cb => {
+        cb.addEventListener('change', (e) => {
+            const targetId = e.target.getAttribute('data-target');
+            const inputEl = document.getElementById(targetId);
+            if (!inputEl) return;
+            if (e.target.checked) {
+                inputEl.value = '';
+                inputEl.disabled = true;
+                inputEl.placeholder = 'Pole zostanie wyczyszczone...';
+            } else {
+                inputEl.disabled = false;
+                inputEl.placeholder = 'Bez zmian...';
+            }
+        });
+    });
+
+    function openBatchEditModal() {
+        if (checkedSerials.size < 2) return;
+        const serialList = Array.from(checkedSerials);
+        batchModalCount.textContent = serialList.length;
+        batchSerialChips.innerHTML = serialList.map(s => `<span class="serial-chip">${escapeHtml(s)}</span>`).join('');
+
+        batchFields.forEach(f => {
+            const inputEl = document.getElementById(f.inputId);
+            inputEl.value = '';
+            inputEl.disabled = false;
+            inputEl.placeholder = 'Bez zmian...';
+        });
+        document.querySelectorAll('.batch-clear-check').forEach(cb => {
+            cb.checked = false;
+        });
+
+        batchEditModal.classList.remove('hidden');
+    }
+
+    function closeBatchEditModal() {
+        batchEditModal.classList.add('hidden');
+    }
+
+    batchEditBtn.addEventListener('click', openBatchEditModal);
+    closeBatchModalBtn.addEventListener('click', closeBatchEditModal);
+    cancelBatchModalBtn.addEventListener('click', closeBatchEditModal);
+    batchEditModal.addEventListener('click', (e) => {
+        if (e.target === batchEditModal) closeBatchEditModal();
+    });
+
+    saveBatchMetadataBtn.addEventListener('click', async () => {
+        if (checkedSerials.size < 2) return;
+
+        const updates = {};
+        batchFields.forEach(f => {
+            const inputEl = document.getElementById(f.inputId);
+            const clearCb = document.querySelector(`.batch-clear-check[data-target="${f.inputId}"]`);
+            if (clearCb && clearCb.checked) {
+                updates[f.key] = '';
+            } else if (inputEl && inputEl.value.trim() !== '') {
+                updates[f.key] = inputEl.value.trim();
+            }
+        });
+
+        if (Object.keys(updates).length === 0) {
+            alert('Wprowadź wartość przynajmniej w jednym polu lub zaznacz „Wyczyść”.');
+            return;
+        }
+
+        try {
+            saveBatchMetadataBtn.disabled = true;
+            saveBatchMetadataBtn.textContent = 'Zapisywanie...';
+
+            const res = await fetch('/api/servers/batch-metadata', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    serials: Array.from(checkedSerials),
+                    updates
+                })
+            });
+
+            if (!res.ok) throw new Error('Failed to batch update metadata');
+
+            await loadServers();
+            if (currentSelectedSerial && checkedSerials.has(currentSelectedSerial) && currentSelectedRun) {
+                await loadServerData(currentSelectedSerial, currentSelectedRun);
+            }
+
+            closeBatchEditModal();
+        } catch (e) {
+            console.error(e);
+            alert('Błąd podczas zapisu grupowego Metadata.');
+        } finally {
+            saveBatchMetadataBtn.disabled = false;
+            saveBatchMetadataBtn.textContent = 'Zapisz dla zaznaczonych';
+        }
+    });
+
+    // --- Link IPMI MAC Modal Logic ---
+    const linkIpmiModal = document.getElementById('linkIpmiModal');
+    const closeLinkIpmiModalBtn = document.getElementById('closeLinkIpmiModalBtn');
+    const cancelLinkIpmiModalBtn = document.getElementById('cancelLinkIpmiModalBtn');
+    const linkModalSerial = document.getElementById('linkModalSerial');
+    const linkModalCurrentMac = document.getElementById('linkModalCurrentMac');
+    const unlinkIpmiBtn = document.getElementById('unlinkIpmiBtn');
+    const refreshModalDhcpBtn = document.getElementById('refreshModalDhcpBtn');
+    const linkModalDhcpBody = document.getElementById('linkModalDhcpBody');
+
+    function renderLinkModalContent() {
+        if (!currentSelectedSerial) return;
+        const srv = allServers.find(s => s.serial === currentSelectedSerial);
+        const currentMac = srv ? (srv.linked_mac || '') : '';
+
+        linkModalSerial.textContent = currentSelectedSerial;
+        linkModalCurrentMac.textContent = currentMac || 'Brak powiązania';
+        if (currentMac) {
+            unlinkIpmiBtn.classList.remove('hidden');
+        } else {
+            unlinkIpmiBtn.classList.add('hidden');
+        }
+
+        linkModalDhcpBody.innerHTML = '';
+        if (currentDhcpLeases.length === 0) {
+            linkModalDhcpBody.innerHTML = `
+                <tr>
+                    <td colspan="6" style="text-align: center; color: #86868b; padding: 20px;">
+                        Brak aktywnych dzierżaw w zakładce Adresy IP DHCP.
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+
+        currentDhcpLeases.forEach(lease => {
+            const isLinkedToCurrent = currentMac && lease.mac.toLowerCase() === currentMac.toLowerCase();
+            const linkedServerObj = allServers.find(s => (s.linked_mac || '').toLowerCase() === lease.mac.toLowerCase());
+            const linkedSerialStr = linkedServerObj ? linkedServerObj.serial : (lease.linked_serial || '');
+
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td style="font-family: monospace; font-weight: 600;">${escapeHtml(lease.mac)}</td>
+                <td>${escapeHtml(lease.ip)}</td>
+                <td>${escapeHtml(lease.hostname)}</td>
+                <td>${escapeHtml(lease.manufacturer)}</td>
+                <td>${linkedSerialStr ? `<span class="serial-chip">${escapeHtml(linkedSerialStr)}</span>` : '<span style="color:#86868b;">-</span>'}</td>
+                <td style="text-align: right;">
+                    ${isLinkedToCurrent
+                        ? `<button class="btn btn-secondary btn-sm" disabled>Połączony</button>`
+                        : `<button class="btn btn-sm select-mac-btn" data-mac="${escapeHtml(lease.mac)}">Połącz</button>`
+                    }
+                </td>
+            `;
+            const selectBtn = tr.querySelector('.select-mac-btn');
+            if (selectBtn) {
+                selectBtn.addEventListener('click', () => {
+                    saveServerIpmiLink(currentSelectedSerial, lease.mac);
+                });
+            }
+            linkModalDhcpBody.appendChild(tr);
+        });
+    }
+
+    async function saveServerIpmiLink(serial, mac) {
+        try {
+            const res = await fetch('/api/ipmi-links', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ serial, mac })
+            });
+            if (!res.ok) throw new Error('Failed to save IPMI link');
+
+            await loadDhcpLeases();
+            await loadServers();
+            if (currentSelectedSerial && currentSelectedRun) {
+                await loadServerData(currentSelectedSerial, currentSelectedRun);
+            }
+            renderLinkModalContent();
+        } catch (e) {
+            console.error('Failed to link MAC', e);
+            alert('Nie udało się zapisać powiązania MAC.');
+        }
+    }
+
+    async function openLinkIpmiModal() {
+        if (!currentSelectedSerial) return;
+        await loadDhcpLeases();
+        renderLinkModalContent();
+        linkIpmiModal.classList.remove('hidden');
+    }
+
+    function closeLinkIpmiModal() {
+        linkIpmiModal.classList.add('hidden');
+    }
+
+    linkIpmiBtn.addEventListener('click', openLinkIpmiModal);
+    closeLinkIpmiModalBtn.addEventListener('click', closeLinkIpmiModal);
+    cancelLinkIpmiModalBtn.addEventListener('click', closeLinkIpmiModal);
+    linkIpmiModal.addEventListener('click', (e) => {
+        if (e.target === linkIpmiModal) closeLinkIpmiModal();
+    });
+
+    unlinkIpmiBtn.addEventListener('click', () => {
+        if (currentSelectedSerial) {
+            saveServerIpmiLink(currentSelectedSerial, '');
+        }
+    });
+
+    refreshModalDhcpBtn.addEventListener('click', async () => {
+        await loadDhcpLeases();
+        renderLinkModalContent();
+    });
+
+    // --- DHCP Leases & Password Sync Logic ---
+    const dhcpTableBody = document.getElementById('dhcpTableBody');
+
     async function savePassword(mac, password) {
         try {
             await fetch('/api/passwords', {
@@ -349,55 +961,69 @@ document.addEventListener('DOMContentLoaded', () => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ mac, password })
             });
+            const lease = currentDhcpLeases.find(l => l.mac.toLowerCase() === mac.toLowerCase());
+            if (lease) lease.password = password;
+            updateServerIpmiCard();
         } catch (e) {
             console.error('Failed to save password', e);
         }
     }
 
+    serverIpmiPassword.addEventListener('change', (e) => {
+        const mac = e.target.getAttribute('data-mac');
+        if (mac) {
+            savePassword(mac, e.target.value);
+            loadDhcpLeases();
+        }
+    });
+
     async function loadDhcpLeases() {
         try {
             const res = await fetch('/api/dhcp');
             const data = await res.json();
-            
-            // Only update table if we aren't currently focused on an input to avoid interrupting typing
-            if (document.activeElement && document.activeElement.classList.contains('password-input')) {
+            currentDhcpLeases = data.leases || [];
+
+            updateServerIpmiCard();
+            renderServerTree();
+
+            if (document.activeElement && document.activeElement.classList.contains('dhcp-table-password-input')) {
                 return;
             }
-            
+
             dhcpTableBody.innerHTML = '';
-            data.leases.forEach(lease => {
+            currentDhcpLeases.forEach(lease => {
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
-                    <td>${lease.mac}</td>
-                    <td>${lease.ip}</td>
-                    <td>${lease.hostname}</td>
-                    <td>${lease.manufacturer}</td>
+                    <td style="font-family: monospace;">${escapeHtml(lease.mac)}</td>
+                    <td>${escapeHtml(lease.ip)}</td>
+                    <td>${escapeHtml(lease.hostname)}</td>
+                    <td>${escapeHtml(lease.manufacturer)}</td>
                     <td>${formatIpmiLink(lease.ip)}</td>
                     <td>
-                        <input type="text" class="styled-input password-input" data-mac="${lease.mac}" value="${lease.password || ''}" placeholder="Save password...">
+                        <input type="text" class="styled-input password-input dhcp-table-password-input" data-mac="${escapeHtml(lease.mac)}" value="${escapeHtml(lease.password || '')}" placeholder="Zapisz hasło...">
                     </td>
                 `;
                 dhcpTableBody.appendChild(tr);
             });
-            
-            // Attach events to new inputs
-            document.querySelectorAll('.password-input').forEach(input => {
+
+            document.querySelectorAll('.dhcp-table-password-input').forEach(input => {
                 input.addEventListener('change', (e) => {
                     const mac = e.target.getAttribute('data-mac');
                     const pwd = e.target.value;
                     savePassword(mac, pwd);
                 });
             });
-            
         } catch (e) {
             console.error('Failed to load DHCP leases', e);
         }
     }
 
     // Initial load
-    loadServers();
-    loadDhcpLeases();
-    
+    (async () => {
+        await loadDhcpLeases();
+        await loadServers();
+    })();
+
     // Auto refresh DHCP leases every 5s
     setInterval(loadDhcpLeases, 5000);
 });

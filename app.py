@@ -14,13 +14,20 @@ app = FastAPI(title="Server Test Log Monitor")
 
 FTP_ROOT = os.getenv("FTP_ROOT", "/home/comset/FTP")
 PASSWORDS_FILE = "ipmi_passwords.json"
+LINKS_FILE = "ipmi_links.json"
 
 def init_passwords_file():
     if not os.path.exists(PASSWORDS_FILE):
         with open(PASSWORDS_FILE, 'w') as f:
             json.dump({}, f)
 
+def init_links_file():
+    if not os.path.exists(LINKS_FILE):
+        with open(LINKS_FILE, 'w') as f:
+            json.dump({}, f)
+
 init_passwords_file()
+init_links_file()
 
 def read_passwords():
     try:
@@ -33,12 +40,23 @@ def write_passwords(data):
     with open(PASSWORDS_FILE, 'w') as f:
         json.dump(data, f, indent=4)
 
+def read_links():
+    try:
+        with open(LINKS_FILE, 'r') as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+def write_links(data):
+    with open(LINKS_FILE, 'w') as f:
+        json.dump(data, f, indent=4)
+
 def parse_raport(content: str):
     sections = {}
     current_section = None
     lines = content.split('\n')
     for line in lines:
-        match = re.match(r'^-{10,}\s+(.+)$', line)
+        match = re.match(r'^-{30,}\s+([A-Za-z0-9].*)$', line)
         if match:
             current_section = match.group(1).strip()
             sections[current_section] = []
@@ -103,6 +121,75 @@ def parse_raport(content: str):
         result['bmc'] = f"{rev_str}.{aux_str}"
     else:
         result['bmc'] = 'N/A'
+
+    # DYSKI SATA/SAS
+    sata_disks = []
+    sata_lines = sections.get('DYSKI SATA/SAS', []) + sections.get('NAPEDY/DYSKI', [])
+    in_sata_table = False
+    for line in sata_lines:
+        s = line.strip()
+        if not s:
+            continue
+        if re.match(r'^NAME\s+MODEL\s+SERIAL', s, re.IGNORECASE):
+            in_sata_table = True
+            continue
+        if in_sata_table:
+            if s.startswith('---'):
+                in_sata_table = False
+                continue
+            parts = s.split()
+            if parts and parts[0].startswith('/dev/'):
+                # Skip virtual devices like /dev/nbd*, /dev/loop*, /dev/ram* with no model/serial
+                if len(parts) < 2:
+                    continue
+                device = parts[0]
+                if len(parts) >= 3:
+                    sn = parts[-1]
+                    pn = " ".join(parts[1:-1])
+                else:
+                    pn = parts[1]
+                    sn = "N/A"
+                sata_disks.append({"device": device, "pn": pn, "sn": sn})
+
+    # DYSKI NVMe
+    nvme_disks = []
+    nvme_lines = sections.get('DYSKI NVMe', [])
+    sep_spans = None
+    header_cols = []
+    prev_line = ""
+    for line in nvme_lines:
+        s = line.strip()
+        if not s:
+            continue
+        if re.match(r'^-{5,}\s+-{5,}', s):
+            sep_spans = [m.span() for m in re.finditer(r'-+', line)]
+            header_cols = [prev_line[start:end].strip().upper() for start, end in sep_spans]
+            continue
+        if sep_spans and s.startswith('/dev/nvme'):
+            def get_col(col_name, fallback_idx):
+                idx = header_cols.index(col_name) if col_name in header_cols else fallback_idx
+                if idx < len(sep_spans):
+                    start, end = sep_spans[idx]
+                    return line[start:end].strip()
+                return ""
+            device = get_col('NODE', 0)
+            sn = get_col('SN', 2 if len(sep_spans) >= 4 else 1)
+            pn = get_col('MODEL', 3 if len(sep_spans) >= 4 else 2)
+            if not device or not sn:
+                parts = s.split()
+                if len(parts) >= 4 and parts[1].startswith('/dev/'):
+                    device, sn, pn = parts[0], parts[2], parts[3]
+                elif len(parts) >= 3:
+                    device, sn, pn = parts[0], parts[1], parts[2]
+            nvme_disks.append({"device": device, "pn": pn or "N/A", "sn": sn or "N/A"})
+        prev_line = line
+
+    result['disks'] = {
+        'sata_count': len(sata_disks),
+        'nvme_count': len(nvme_disks),
+        'sata': sata_disks,
+        'nvme': nvme_disks
+    }
         
     return result
 
@@ -160,6 +247,7 @@ def list_servers():
     if not os.path.exists(FTP_ROOT):
         return {"servers": []}
     
+    links = read_links()
     server_list = []
     serial_dirs = find_serial_dirs(FTP_ROOT)
     for serial in serial_dirs:
@@ -170,16 +258,19 @@ def list_servers():
         if os.path.exists(meta_path):
             try:
                 with open(meta_path, 'r') as f:
-                    metadata = json.load(f)
+                    loaded = json.load(f)
+                    if isinstance(loaded, dict):
+                        metadata.update(loaded)
             except:
                 pass
                 
+        linked_mac = links.get(serial, "")
         if latest_run:
             run_name = os.path.basename(latest_run)
             date_str = format_run_date(run_name)
-            server_list.append({"serial": serial, "date": date_str, "raw": run_name, "metadata": metadata})
+            server_list.append({"serial": serial, "date": date_str, "raw": run_name, "metadata": metadata, "linked_mac": linked_mac})
         else:
-            server_list.append({"serial": serial, "date": "No runs", "raw": "", "metadata": metadata})
+            server_list.append({"serial": serial, "date": "No runs", "raw": "", "metadata": metadata, "linked_mac": linked_mac})
                 
     server_list.sort(key=lambda x: x["raw"], reverse=True)
     return {"servers": server_list}
@@ -195,6 +286,7 @@ def list_server_runs(serial_b64: str):
     return {"runs": run_list}
 
 from pydantic import BaseModel
+from typing import Dict, List, Optional
 import json
 
 class MetadataModel(BaseModel):
@@ -202,6 +294,14 @@ class MetadataModel(BaseModel):
     so_number: str
     server_name: str
     notes: str
+
+class BatchMetadataModel(BaseModel):
+    serials: List[str]
+    updates: Dict[str, str]
+
+class IpmiLinkModel(BaseModel):
+    serial: str
+    mac: Optional[str] = ""
 
 @app.get("/api/servers/{serial_b64}/runs/{run}")
 def get_server_details(serial_b64: str, run: str):
@@ -221,14 +321,18 @@ def get_server_details(serial_b64: str, run: str):
     data = parse_raport(content)
     
     meta_path = os.path.join(serial_dir, "metadata.json")
+    default_meta = {"customer": "", "so_number": "", "server_name": "", "notes": ""}
     if os.path.exists(meta_path):
         try:
             with open(meta_path, 'r') as f:
-                data['metadata'] = json.load(f)
+                loaded = json.load(f)
+                if isinstance(loaded, dict):
+                    default_meta.update(loaded)
         except:
-            data['metadata'] = {"customer": "", "so_number": "", "server_name": "", "notes": ""}
-    else:
-        data['metadata'] = {"customer": "", "so_number": "", "server_name": "", "notes": ""}
+            pass
+    data['metadata'] = default_meta
+    links = read_links()
+    data['linked_mac'] = links.get(serial, "")
         
     return data
 
@@ -245,6 +349,60 @@ def update_metadata(serial_b64: str, run: str, metadata: MetadataModel):
         json.dump(metadata.model_dump(), f)
     
     return {"status": "success"}
+
+@app.post("/api/servers/batch-metadata")
+def batch_update_metadata(batch: BatchMetadataModel):
+    if not batch.serials:
+        raise HTTPException(status_code=400, detail="No serials provided")
+    
+    allowed_keys = {"customer", "so_number", "server_name", "notes"}
+    base_abs = os.path.abspath(FTP_ROOT)
+    updated_count = 0
+    
+    for serial in batch.serials:
+        serial_dir = os.path.abspath(os.path.join(FTP_ROOT, serial))
+        if not serial_dir.startswith(base_abs + os.sep) or not os.path.isdir(serial_dir):
+            continue
+        meta_path = os.path.join(serial_dir, "metadata.json")
+        current_meta = {"customer": "", "so_number": "", "server_name": "", "notes": ""}
+        if os.path.exists(meta_path):
+            try:
+                with open(meta_path, 'r') as f:
+                    loaded = json.load(f)
+                    if isinstance(loaded, dict):
+                        current_meta.update(loaded)
+            except:
+                pass
+        for k, v in batch.updates.items():
+            if k in allowed_keys:
+                current_meta[k] = v
+        with open(meta_path, 'w') as f:
+            json.dump(current_meta, f)
+        updated_count += 1
+        
+    return {"status": "success", "updated_count": updated_count}
+
+@app.get("/api/ipmi-links")
+def get_ipmi_links():
+    return {"links": read_links()}
+
+@app.post("/api/ipmi-links")
+def save_ipmi_link(payload: IpmiLinkModel):
+    serial = payload.serial.strip()
+    if not serial:
+        raise HTTPException(status_code=400, detail="Serial is required")
+    links = read_links()
+    mac = (payload.mac or "").strip().lower()
+    if not mac:
+        links.pop(serial, None)
+    else:
+        # Ensure 1-to-1 MAC to serial mapping
+        to_remove = [s for s, m in links.items() if m.lower() == mac and s != serial]
+        for s in to_remove:
+            links.pop(s, None)
+        links[serial] = mac
+    write_links(links)
+    return {"status": "success", "links": links}
 
 @app.get("/api/servers/{serial_b64}/runs/{run}/logs")
 def list_server_logs(serial_b64: str, run: str):
@@ -306,8 +464,11 @@ def get_dhcp_leases():
             print(f"Error running dhcp-lease-list: {e}")
             
     passwords = read_passwords()
+    links = read_links()
+    mac_to_serial = {m.lower(): s for s, m in links.items() if m}
     for lease in leases:
         lease['password'] = passwords.get(lease['mac'], "")
+        lease['linked_serial'] = mac_to_serial.get(lease['mac'].lower(), "")
         
     return {"leases": leases}
 

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="pl">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -13,7 +13,7 @@
             <div style="display: flex; align-items: center; gap: 16px;">
                 <div class="tabs">
                     <button class="tab-btn active" data-tab="dashboard">Dashboard</button>
-                    <button class="tab-btn" data-tab="dhcp">DHCP Leases</button>
+                    <button class="tab-btn" data-tab="dhcp">Adresy IP DHCP</button>
                 </div>
                 <a href="http://192.168.2.95:26000" class="btn" style="text-decoration: none;" target="_blank">PXE Boot</a>
             </div>
@@ -23,71 +23,239 @@
     <main class="container">
         <!-- Dashboard Tab -->
         <div id="dashboard" class="tab-content active">
-            <div class="search-bar">
-                <div class="search-container">
-                    <input type="search" id="serverSearch" class="styled-input search-input" placeholder="Search serial numbers..." autocomplete="off">
-                    <ul id="serverList" class="custom-dropdown hidden"></ul>
-                </div>
-                <button id="refreshServersBtn" class="btn">Refresh List</button>
-            </div>
-            
-            <div id="dashboardContent" class="dashboard-grid hidden">
-                <div class="card">
-                    <h2>System</h2>
-                    <div id="sysData" class="data-group"></div>
-                </div>
-                <div class="card">
-                    <h2>Chassis</h2>
-                    <div id="chassisData" class="data-group"></div>
-                </div>
-                <div class="card">
-                    <h2>Motherboard</h2>
-                    <div id="mbData" class="data-group"></div>
-                </div>
-                <div class="card">
-                    <h2>RAM</h2>
-                    <div id="ramData" class="data-group"></div>
-                </div>
-                <div class="card">
-                    <h2>BMC/IPMI</h2>
-                    <div id="bmcData" class="data-group"></div>
-                </div>
-                <div class="card">
-                    <h2>CPU</h2>
-                    <div id="cpuData" class="data-group"></div>
-                </div>
-                
-                <div class="card full-width">
-                    <h2>Metadata & Notes</h2>
-                    <div class="metadata-form">
-                        <div class="form-group">
-                            <label>Customer</label>
-                            <input type="text" id="metaCustomer" class="styled-input">
-                        </div>
-                        <div class="form-group">
-                            <label>SO #</label>
-                            <input type="text" id="metaSO" class="styled-input">
-                        </div>
-                        <div class="form-group" style="grid-column: span 2;">
-                            <label>Server Name</label>
-                            <input type="text" id="metaServerName" class="styled-input">
-                        </div>
-                        <div class="form-group" style="grid-column: 1 / -1;">
-                            <label>Notes</label>
-                            <textarea id="metaNotes" class="styled-input" style="height: 80px; resize: vertical;"></textarea>
-                        </div>
-                        <button id="saveMetadataBtn" class="btn" style="grid-column: 1 / -1; width: fit-content;">Save Metadata</button>
+            <div class="dashboard-layout">
+                <!-- Left Sidebar / Tree Panel -->
+                <aside class="sidebar-panel">
+                    <!-- Top Action Toolbar (Comarch ERP Optima style) -->
+                    <div class="sidebar-toolbar">
+                        <button id="batchEditBtn" class="toolbar-btn" disabled title="Zaznacz min. 2 serwery, aby edytować grupowo Metadata i notatki">
+                            <svg class="toolbar-svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+                                <path d="M11.5 2.5a1.414 1.414 0 0 1 2 2L5 13H3v-2l8.5-8.5z" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                            <span>Edytuj</span>
+                            <span id="batchCountBadge" class="toolbar-badge hidden">0</span>
+                        </button>
+                        <button id="linkIpmiBtn" class="toolbar-btn" disabled title="Wybierz serwer z listy, aby powiązać go z adresem MAC IPMI">
+                            <svg class="toolbar-svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+                                <path d="M6.5 9.5a3 3 0 0 0 4.24 0l2-2a3 3 0 0 0-4.24-4.24l-1.1 1.1" stroke-linecap="round" stroke-linejoin="round"/>
+                                <path d="M9.5 6.5a3 3 0 0 0-4.24 0l-2 2a3 3 0 0 0 4.24 4.24l1.1-1.1" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                            <span>IPMI MAC</span>
+                        </button>
+                        <button id="refreshServersBtn" class="toolbar-btn icon-btn" title="Odśwież listę serwerów">
+                            <svg class="toolbar-svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6">
+                                <path d="M13.5 8a5.5 5.5 0 1 1-1.4-3.66M13.5 2.5v2.2h-2.2" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                        </button>
                     </div>
-                </div>
-                
-                <div class="card full-width">
-                    <h2>Log File Viewer</h2>
-                    <div class="log-controls">
-                        <select id="runSelect" class="styled-select" style="margin-right: 12px;"></select>
-                        <select id="logFileSelect" class="styled-select"></select>
+
+                    <!-- Search + Filtering Checkboxes -->
+                    <div class="sidebar-search-box">
+                        <div class="search-input-wrapper">
+                            <input type="text" id="serverSearch" class="styled-input search-input" placeholder="Szukaj (SN, klient, SO#, nazwa)..." autocomplete="off">
+                            <button type="button" id="clearSearchBtn" class="search-clear-btn hidden" title="Wyczyść wyszukiwanie" aria-label="Wyczyść wyszukiwanie">
+                                <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+                                    <path d="M4 4l8 8M12 4l-8 8"/>
+                                </svg>
+                            </button>
+                        </div>
+                        
+                        <div class="filter-section">
+                            <div class="filter-group-title">Szukaj w polach:</div>
+                            <div class="filter-checkboxes">
+                                <label class="filter-checkbox-label">
+                                    <input type="checkbox" id="filterFieldSerial" checked>
+                                    <span>SN</span>
+                                </label>
+                                <label class="filter-checkbox-label">
+                                    <input type="checkbox" id="filterFieldCustomer" checked>
+                                    <span>Klient</span>
+                                </label>
+                                <label class="filter-checkbox-label">
+                                    <input type="checkbox" id="filterFieldSO" checked>
+                                    <span>SO #</span>
+                                </label>
+                                <label class="filter-checkbox-label">
+                                    <input type="checkbox" id="filterFieldServerName" checked>
+                                    <span>Nazwa serwera</span>
+                                </label>
+                                <label class="filter-checkbox-label">
+                                    <input type="checkbox" id="filterFieldNotes" checked>
+                                    <span>Notatki</span>
+                                </label>
+                            </div>
+
+                            <div class="filter-group-title" style="margin-top: 8px;">Filtruj listę:</div>
+                            <div class="filter-checkboxes">
+                                <label class="filter-checkbox-label">
+                                    <input type="checkbox" id="filterStatusOnline">
+                                    <span>W sieci (DHCP)</span>
+                                </label>
+                                <label class="filter-checkbox-label">
+                                    <input type="checkbox" id="filterStatusLinked">
+                                    <span>Powiązany MAC</span>
+                                </label>
+                                <label class="filter-checkbox-label">
+                                    <input type="checkbox" id="filterStatusMetadata">
+                                    <span>Z Metadata</span>
+                                </label>
+                            </div>
+                        </div>
                     </div>
-                    <pre id="logViewer" class="log-viewer"></pre>
-                </div>
+
+                    <!-- Tree Header -->
+                    <div class="tree-header">
+                        <label class="tree-select-all" title="Zaznacz / odznacz widoczne serwery">
+                            <input type="checkbox" id="selectAllVisibleCheck">
+                            <span>Lista seryjnych</span>
+                        </label>
+                        <span id="serverCountLabel" class="tree-count-badge">0</span>
+                    </div>
+
+                    <!-- Tree List -->
+                    <ul id="serverList" class="server-tree"></ul>
+                </aside>
+
+                <!-- Main Server Details Area -->
+                <section class="main-panel">
+                    <div id="emptyServerState" class="card empty-state-card">
+                        <div class="empty-state-content">
+                            <div class="empty-state-icon">
+                                <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="#86868b" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                    <rect x="2" y="3" width="20" height="7" rx="2"/>
+                                    <rect x="2" y="14" width="20" height="7" rx="2"/>
+                                    <circle cx="6" cy="6.5" r="1" fill="#86868b"/>
+                                    <circle cx="6" cy="17.5" r="1" fill="#86868b"/>
+                                    <path d="M10 6.5h8M10 17.5h8"/>
+                                </svg>
+                            </div>
+                            <h3>Wybierz serwer z listy po lewej stronie</h3>
+                            <p>Kliknij numer seryjny w drzewie, aby wyświetlić konfigurację sprzętową, dyski, logi oraz powiązanie IPMI. Zaznacz minimum 2 serwery checkboxami, aby użyć edycji grupowej Metadata i notatek.</p>
+                        </div>
+                    </div>
+
+                    <div id="dashboardContent" class="dashboard-grid hidden">
+                        <!-- Linked IPMI Active Lease Row (shown when linked MAC is active in DHCP Leases) -->
+                        <div id="serverIpmiCard" class="card full-width ipmi-active-card hidden">
+                            <div class="card-header" style="margin-bottom: 12px;">
+                                <div style="display: flex; align-items: center; gap: 10px;">
+                                    <span class="online-dot"></span>
+                                    <h2 style="margin: 0; color: var(--text-color);">IPMI / Adresy IP DHCP (W sieci)</h2>
+                                </div>
+                                <span id="serverIpmiHostname" class="ipmi-meta-tag"></span>
+                            </div>
+                            <div class="table-container">
+                                <table class="styled-table ipmi-inline-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Adres MAC</th>
+                                            <th>Adres IP</th>
+                                            <th>Link IPMI</th>
+                                            <th>Hasło</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td id="serverIpmiMac" style="font-family: monospace; font-weight: 600;">-</td>
+                                            <td id="serverIpmiIp">-</td>
+                                            <td id="serverIpmiLinkCell">-</td>
+                                            <td>
+                                                <input type="text" id="serverIpmiPassword" class="styled-input password-input" placeholder="Zapisz hasło...">
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div class="card">
+                            <h2>System</h2>
+                            <div id="sysData" class="data-group"></div>
+                        </div>
+                        <div class="card">
+                            <h2>Obudowa</h2>
+                            <div id="chassisData" class="data-group"></div>
+                        </div>
+                        <div class="card">
+                            <h2>Płyta główna</h2>
+                            <div id="mbData" class="data-group"></div>
+                        </div>
+                        <div class="card">
+                            <h2>RAM</h2>
+                            <div id="ramData" class="data-group"></div>
+                        </div>
+                        <div class="card">
+                            <h2>BMC/IPMI</h2>
+                            <div id="bmcData" class="data-group"></div>
+                        </div>
+                        <div class="card">
+                            <h2>CPU</h2>
+                            <div id="cpuData" class="data-group"></div>
+                        </div>
+
+                        <!-- Disks Section -->
+                        <div class="card full-width">
+                            <div class="card-header">
+                                <h2>Dyski (SATA/SAS &amp; NVMe)</h2>
+                                <div class="disk-counters">
+                                    <span class="disk-counter-pill">SATA/SAS: <strong id="sataDiskCount">0</strong></span>
+                                    <span class="disk-counter-pill">NVMe: <strong id="nvmeDiskCount">0</strong></span>
+                                </div>
+                            </div>
+                            <div id="disksContainer"></div>
+                        </div>
+                        
+                        <div class="card full-width">
+                            <h2>Metadata i notatki</h2>
+                            <div class="metadata-form">
+                                <div class="form-group">
+                                    <label>Klient</label>
+                                    <input type="text" id="metaCustomer" class="styled-input">
+                                </div>
+                                <div class="form-group">
+                                    <label>SO #</label>
+                                    <input type="text" id="metaSO" class="styled-input">
+                                </div>
+                                <div class="form-group" style="grid-column: span 2;">
+                                    <label>Nazwa serwera</label>
+                                    <input type="text" id="metaServerName" class="styled-input">
+                                </div>
+                                <div class="form-group" style="grid-column: 1 / -1;">
+                                    <label>Notatki</label>
+                                    <textarea id="metaNotes" class="styled-input" style="height: 80px; resize: vertical;"></textarea>
+                                </div>
+                                <button id="saveMetadataBtn" class="btn" style="grid-column: 1 / -1; width: fit-content;">Zapisz</button>
+                            </div>
+                        </div>
+                        
+                        <div class="card full-width">
+                            <h2>Podgląd logów</h2>
+                            <div class="log-controls">
+                                <!-- Custom non-native dropdowns to avoid OS picker and page jumping -->
+                                <div class="custom-select-wrapper" id="runSelectWrapper">
+                                    <button type="button" class="custom-select-trigger" id="runSelectTrigger">
+                                        <span id="runSelectLabel">Wybierz sesję...</span>
+                                        <svg class="select-chevron" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                                            <path d="M4 6l4 4 4-4"/>
+                                        </svg>
+                                    </button>
+                                    <ul class="custom-select-menu hidden" id="runSelectMenu"></ul>
+                                </div>
+
+                                <div class="custom-select-wrapper" id="logFileSelectWrapper">
+                                    <button type="button" class="custom-select-trigger" id="logFileSelectTrigger">
+                                        <span id="logFileSelectLabel">Wybierz plik...</span>
+                                        <svg class="select-chevron" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                                            <path d="M4 6l4 4 4-4"/>
+                                        </svg>
+                                    </button>
+                                    <ul class="custom-select-menu hidden" id="logFileSelectMenu"></ul>
+                                </div>
+                            </div>
+                            <pre id="logViewer" class="log-viewer"></pre>
+                        </div>
+                    </div>
+                </section>
             </div>
         </div>
 
@@ -95,19 +263,19 @@
         <div id="dhcp" class="tab-content">
             <div class="card full-width">
                 <div class="card-header">
-                    <h2>DHCP Leases</h2>
-                    <span class="auto-refresh-indicator">Auto-refreshing every 5s</span>
+                    <h2>Adresy IP DHCP</h2>
+                    <span class="auto-refresh-indicator">Automatyczne odświeżanie co 5s</span>
                 </div>
                 <div class="table-container">
                     <table class="styled-table">
                         <thead>
                             <tr>
-                                <th>MAC Address</th>
-                                <th>IP Address</th>
-                                <th>Hostname</th>
-                                <th>Manufacturer</th>
-                                <th>IPMI Link</th>
-                                <th>Password Manager</th>
+                                <th>Adres MAC</th>
+                                <th>Adres IP</th>
+                                <th>Nazwa hosta</th>
+                                <th>Producent</th>
+                                <th>Link IPMI</th>
+                                <th>Hasło</th>
                             </tr>
                         </thead>
                         <tbody id="dhcpTableBody">
@@ -118,6 +286,113 @@
             </div>
         </div>
     </main>
+
+    <!-- Batch Edit Metadata Modal -->
+    <div id="batchEditModal" class="modal-overlay hidden">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3>Edycja grupowa Metadata i notatki</h3>
+                <button id="closeBatchModalBtn" class="modal-close-btn" title="Zamknij">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="batch-info-box">
+                    <div>Zaznaczone serwery (<strong id="batchModalCount">0</strong>):</div>
+                    <div id="batchSerialChips" class="serial-chips"></div>
+                </div>
+                <p class="modal-hint">
+                    Wpisz nową wartość, aby zaktualizować dane pole we wszystkich zaznaczonych serwerach. Pozostaw pole puste, aby zachować dotychczasową wartość (lub zaznacz „Wyczyść”, aby usunąć wartość).
+                </p>
+                <div class="metadata-form">
+                    <div class="form-group">
+                        <div class="label-row">
+                            <label for="batchMetaCustomer">Klient</label>
+                            <label class="clear-check-label"><input type="checkbox" class="batch-clear-check" data-target="batchMetaCustomer"> Wyczyść</label>
+                        </div>
+                        <input type="text" id="batchMetaCustomer" class="styled-input" placeholder="Bez zmian...">
+                    </div>
+                    <div class="form-group">
+                        <div class="label-row">
+                            <label for="batchMetaSO">SO #</label>
+                            <label class="clear-check-label"><input type="checkbox" class="batch-clear-check" data-target="batchMetaSO"> Wyczyść</label>
+                        </div>
+                        <input type="text" id="batchMetaSO" class="styled-input" placeholder="Bez zmian...">
+                    </div>
+                    <div class="form-group" style="grid-column: 1 / -1;">
+                        <div class="label-row">
+                            <label for="batchMetaServerName">Nazwa serwera</label>
+                            <label class="clear-check-label"><input type="checkbox" class="batch-clear-check" data-target="batchMetaServerName"> Wyczyść</label>
+                        </div>
+                        <input type="text" id="batchMetaServerName" class="styled-input" placeholder="Bez zmian...">
+                    </div>
+                    <div class="form-group" style="grid-column: 1 / -1;">
+                        <div class="label-row">
+                            <label for="batchMetaNotes">Notatki</label>
+                            <label class="clear-check-label"><input type="checkbox" class="batch-clear-check" data-target="batchMetaNotes"> Wyczyść</label>
+                        </div>
+                        <textarea id="batchMetaNotes" class="styled-input" style="height: 80px; resize: vertical;" placeholder="Bez zmian..."></textarea>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="cancelBatchModalBtn" class="btn btn-secondary">Anuluj</button>
+                <button id="saveBatchMetadataBtn" class="btn">Zapisz dla zaznaczonych</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Link IPMI MAC Modal -->
+    <div id="linkIpmiModal" class="modal-overlay hidden">
+        <div class="modal-card modal-card-wide">
+            <div class="modal-header">
+                <h3>Połącz serwer z adresem MAC IPMI</h3>
+                <button id="closeLinkIpmiModalBtn" class="modal-close-btn" title="Zamknij">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="link-server-summary">
+                    <div>
+                        <span class="data-label">Wybrany serwer (SN):</span>
+                        <strong id="linkModalSerial" style="margin-left: 6px; font-size: 15px;">-</strong>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <span class="data-label">Aktualny MAC:</span>
+                        <strong id="linkModalCurrentMac" style="font-family: monospace;">Brak</strong>
+                        <button id="unlinkIpmiBtn" class="btn btn-danger btn-sm hidden">Odepnij MAC</button>
+                    </div>
+                </div>
+
+                <div style="display: flex; justify-content: space-between; align-items: center; margin: 16px 0 10px;">
+                    <h4 style="margin: 0; font-size: 14px; color: #4a4a4a;">Dostępne adresy w Adresy IP DHCP</h4>
+                    <button id="refreshModalDhcpBtn" class="toolbar-btn">
+                        <svg class="toolbar-svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6">
+                            <path d="M13.5 8a5.5 5.5 0 1 1-1.4-3.66M13.5 2.5v2.2h-2.2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                        <span>Odśwież DHCP</span>
+                    </button>
+                </div>
+
+                <div class="table-container link-modal-table-wrap">
+                    <table class="styled-table link-modal-table">
+                        <thead>
+                            <tr>
+                                <th>Adres MAC</th>
+                                <th>Adres IP</th>
+                                <th>Nazwa hosta</th>
+                                <th>Producent</th>
+                                <th>Powiązany serwer</th>
+                                <th style="text-align: right;">Akcja</th>
+                            </tr>
+                        </thead>
+                        <tbody id="linkModalDhcpBody">
+                            <!-- Populated by JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="cancelLinkIpmiModalBtn" class="btn btn-secondary">Zamknij</button>
+            </div>
+        </div>
+    </div>
 
     <script src="app.js"></script>
 </body>
