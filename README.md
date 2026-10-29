@@ -4,12 +4,24 @@ An internal web application designed to manage, view, and parse server hardware 
 
 ## Features
 
-- **Apple-Inspired Native UI**: A clean, highly aesthetic interface utilizing translucent glassmorphism effects, modern rounded styling, and smooth micro-animations.
-- **Server Dashboard**: Automatically parses server logs (specifically `1-raport-glowny.txt`) to extract and neatly present hardware information including System, Chassis, Motherboard, RAM, CPU, and BMC firmware.
-- **Advanced Serial Directory Search**: Recursively discovers log directories. Features a custom collapsible search dropdown that instantly filters results and auto-expands grouped directories.
-- **Run History**: Seamlessly pick and jump between multiple timestamped runs (`YYMMDD_HHMMSS`) for the same hardware serial number.
-- **Log File Viewer**: Browse and view raw log outputs recursively across subfolders.
-- **DHCP Monitor**: Live-polling DHCP leases dashboard. Shows MAC addresses, IPs, hostnames, dynamically generates direct IPMI web interface links, and allows you to securely save passwords per machine locally.
+- **Apple-Inspired Native UI (Polish Interface)**: A clean, modern interface utilizing translucent glassmorphism effects, rounded styling, and custom non-native dropdowns that prevent OS picker page jumps.
+- **Left Sidebar Server Tree & Filtering**:
+  - Tree-style sidebar supporting both flat and grouped serial directories (e.g., `GROUP/SERIAL_NUMBER`).
+  - Displays each server's **Customer** (`Klient`) and **Server Name** (`Nazwa serwera`) stacked under the serial number, falling back to the hardware **Model** from the `SYSTEM` report section when metadata is empty.
+  - Multi-criteria search and filtering checkboxes (by Serial, Customer, SO #, Server Name, Notes, active DHCP online status, linked IPMI MAC status, and metadata presence).
+- **Server Hardware Dashboard**: Automatically parses `1-raport-glowny.txt` to extract and display:
+  - **System, Obudowa (Chassis), Płyta główna (Motherboard), Procesor (CPU), and BMC/IPMI** firmware revision.
+  - **RAM**: Total physical memory capacity (`Całkowita pamięć` summed from installed DIMM modules), occupied slots, and total slots.
+  - **Dyski (SATA/SAS & NVMe)**: Summary counters and detailed disk table with device nodes, Part Numbers / Models (PN), and Serial Numbers (SN).
+- **Metadata & Notes Management (`Metadata i notatki`)**:
+  - Per-server fields for **Klient**, **SO #**, **Nazwa serwera**, and **Notatki** with an unsaved-changes indicator (yellow dot next to `Zapisz`).
+  - **Copy & Paste**: Copy metadata from one server to the clipboard (`Kopiuj` / `Wklej`) or directly apply it to checked servers on the sidebar (`Kopiuj na zaznaczone`).
+  - **Batch Edit (`Edycja grupowa`)**: Select multiple servers via sidebar checkboxes to bulk-update or clear metadata fields, or load values from any existing server.
+- **IPMI MAC Linking & Live DHCP Status**:
+  - Link a server serial number with its IPMI MAC address (`Połącz MAC`) using a modal with colon-agnostic substring MAC search.
+  - When a linked server is active in DHCP, an online IPMI bar is displayed directly on the server page with its MAC, IP, direct IPMI link, and synchronized password input.
+- **Run History & Dynamic Log Viewer**: Seamlessly switch between timestamped test runs (`YYMMDD_HHMMSS`) and browse raw log files in a dynamically expanding log viewer.
+- **DHCP Monitor (`Adresy IP DHCP`)**: Live-polling DHCP leases table (auto-refreshing every 5s) showing MAC addresses, IPs, hostnames, manufacturers, IPMI links, and persistent per-MAC passwords.
 
 ## Architecture
 
@@ -69,5 +81,9 @@ Once the server says `Uvicorn running on http://0.0.0.0:<PORT>`, open your web b
 http://localhost:<PORT>
 ```
 
-- **Dashboard Tab**: Use the top-left search bar to find and select a server. Switch between historical runs and read direct file outputs in the Log Viewer.
-- **DHCP Leases Tab**: View active local leases. The list refreshes automatically every 5 seconds. You can safely type and save IPMI passwords dynamically without losing cursor focus during reloads.
+- **Serwery Tab (`Serwery`)**:
+  - Use the left sidebar to search, filter, and select servers.
+  - Check multiple servers to perform **Edycja grupowa** (batch metadata editing) or use **Kopiuj / Wklej / Kopiuj na zaznaczone** in the **Metadata i notatki** card.
+  - Click **Połącz MAC** on the sidebar toolbar to bind the selected server to a DHCP IPMI MAC address.
+  - Switch between historical test runs and inspect log files in the **Podgląd logów** section.
+- **Adresy IP DHCP Tab (`Adresy IP DHCP`)**: View active DHCP leases (auto-refreshed every 5 seconds), open IPMI web interfaces directly, and save per-MAC IPMI passwords without losing cursor focus during reloads.

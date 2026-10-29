@@ -24,6 +24,17 @@ document.addEventListener('DOMContentLoaded', () => {
     let checkedSerials = new Set();
     let expandedGroups = new Set();
     let visibleSerials = [];
+    let copiedMetadata = null;
+    let savedServerMetadata = { customer: '', so_number: '', server_name: '', notes: '' };
+
+    try {
+        const savedClip = localStorage.getItem('copiedServerMetadata');
+        if (savedClip) {
+            copiedMetadata = JSON.parse(savedClip);
+        }
+    } catch (e) {
+        copiedMetadata = null;
+    }
 
     // --- DOM Elements ---
     const serverSearch = document.getElementById('serverSearch');
@@ -40,7 +51,20 @@ document.addEventListener('DOMContentLoaded', () => {
     const dashboardContent = document.getElementById('dashboardContent');
     const logViewer = document.getElementById('logViewer');
 
-    // Custom Dropdown Elements (Run & Log File)
+    // Metadata Copy/Paste & Form Elements
+    const copiedSourceBadge = document.getElementById('copiedSourceBadge');
+    const copyMetadataBtn = document.getElementById('copyMetadataBtn');
+    const copyMetadataBtnLabel = document.getElementById('copyMetadataBtnLabel');
+    const pasteMetadataBtn = document.getElementById('pasteMetadataBtn');
+    const copyToCheckedBtn = document.getElementById('copyToCheckedBtn');
+    const copyToCheckedBadge = document.getElementById('copyToCheckedBadge');
+    const metaCustomerInput = document.getElementById('metaCustomer');
+    const metaSOInput = document.getElementById('metaSO');
+    const metaServerNameInput = document.getElementById('metaServerName');
+    const metaNotesInput = document.getElementById('metaNotes');
+    const metadataDirtyIndicator = document.getElementById('metadataDirtyIndicator');
+
+    // Custom Dropdown Elements (Run, Log File, Batch Source)
     const runSelectWrapper = document.getElementById('runSelectWrapper');
     const runSelectTrigger = document.getElementById('runSelectTrigger');
     const runSelectLabel = document.getElementById('runSelectLabel');
@@ -50,6 +74,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const logFileSelectTrigger = document.getElementById('logFileSelectTrigger');
     const logFileSelectLabel = document.getElementById('logFileSelectLabel');
     const logFileSelectMenu = document.getElementById('logFileSelectMenu');
+
+    const batchSourceWrapper = document.getElementById('batchSourceWrapper');
+    const batchSourceTrigger = document.getElementById('batchSourceTrigger');
+    const batchSourceLabel = document.getElementById('batchSourceLabel');
+    const batchSourceMenu = document.getElementById('batchSourceMenu');
 
     // Filter Checkboxes
     const filterFieldSerial = document.getElementById('filterFieldSerial');
@@ -119,46 +148,51 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Custom Dropdown Helpers ---
     function closeAllCustomSelects() {
-        runSelectMenu.classList.add('hidden');
-        runSelectTrigger.classList.remove('open');
-        logFileSelectMenu.classList.add('hidden');
-        logFileSelectTrigger.classList.remove('open');
+        [
+            [runSelectMenu, runSelectTrigger],
+            [logFileSelectMenu, logFileSelectTrigger],
+            [batchSourceMenu, batchSourceTrigger]
+        ].forEach(([menu, trigger]) => {
+            if (menu) menu.classList.add('hidden');
+            if (trigger) trigger.classList.remove('open');
+        });
     }
 
-    runSelectTrigger.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const isOpen = !runSelectMenu.classList.contains('hidden');
-        closeAllCustomSelects();
-        if (!isOpen) {
-            runSelectMenu.classList.remove('hidden');
-            runSelectTrigger.classList.add('open');
-        }
-    });
+    function bindCustomSelectToggle(triggerEl, menuEl) {
+        if (!triggerEl || !menuEl) return;
+        triggerEl.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const isOpen = !menuEl.classList.contains('hidden');
+            closeAllCustomSelects();
+            if (!isOpen) {
+                menuEl.classList.remove('hidden');
+                triggerEl.classList.add('open');
+            }
+        });
+    }
 
-    logFileSelectTrigger.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const isOpen = !logFileSelectMenu.classList.contains('hidden');
-        closeAllCustomSelects();
-        if (!isOpen) {
-            logFileSelectMenu.classList.remove('hidden');
-            logFileSelectTrigger.classList.add('open');
-        }
-    });
+    bindCustomSelectToggle(runSelectTrigger, runSelectMenu);
+    bindCustomSelectToggle(logFileSelectTrigger, logFileSelectMenu);
+    bindCustomSelectToggle(batchSourceTrigger, batchSourceMenu);
 
     document.addEventListener('click', (e) => {
-        if (!runSelectWrapper.contains(e.target) && !logFileSelectWrapper.contains(e.target)) {
+        if (
+            !runSelectWrapper.contains(e.target) &&
+            !logFileSelectWrapper.contains(e.target) &&
+            (!batchSourceWrapper || !batchSourceWrapper.contains(e.target))
+        ) {
             closeAllCustomSelects();
         }
     });
 
-    function populateCustomSelect(menuEl, labelEl, items, selectedValue, onSelect) {
+    function populateCustomSelect(menuEl, labelEl, items, selectedValue, onSelect, placeholderText = '-') {
         menuEl.innerHTML = '';
-        const selectedItem = items.find(i => i.value === selectedValue) || items[0] || null;
-        labelEl.textContent = selectedItem ? selectedItem.label : '-';
+        const selectedItem = items.find(i => i.value === selectedValue) || null;
+        labelEl.textContent = selectedItem ? selectedItem.label : placeholderText;
 
         items.forEach(item => {
             const li = document.createElement('li');
-            li.className = `custom-select-item${item.value === (selectedItem ? selectedItem.value : '') ? ' selected' : ''}`;
+            li.className = `custom-select-item${selectedItem && item.value === selectedItem.value ? ' selected' : ''}`;
             li.textContent = item.label;
             li.addEventListener('click', (e) => {
                 e.stopPropagation();
@@ -170,6 +204,27 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             menuEl.appendChild(li);
         });
+    }
+
+    // --- Copy / Paste Metadata State UI ---
+    function updateCopyPasteState() {
+        if (copiedMetadata) {
+            pasteMetadataBtn.disabled = false;
+            copiedSourceBadge.textContent = `Schowek: ${copiedMetadata.sourceSerial || 'skopiowano'}`;
+            copiedSourceBadge.classList.remove('hidden');
+        } else {
+            pasteMetadataBtn.disabled = true;
+            copiedSourceBadge.classList.add('hidden');
+        }
+
+        const count = checkedSerials.size;
+        copyToCheckedBtn.disabled = count < 1;
+        if (count > 0) {
+            copyToCheckedBadge.textContent = count;
+            copyToCheckedBadge.classList.remove('hidden');
+        } else {
+            copyToCheckedBadge.classList.add('hidden');
+        }
     }
 
     // --- Toolbar & Selection State ---
@@ -193,6 +248,8 @@ document.addEventListener('DOMContentLoaded', () => {
             selectAllVisibleCheck.checked = checkedVisibleCount === visibleSerials.length;
             selectAllVisibleCheck.indeterminate = checkedVisibleCount > 0 && checkedVisibleCount < visibleSerials.length;
         }
+
+        updateCopyPasteState();
     }
 
     // --- Filtering & Tree Rendering ---
@@ -236,10 +293,25 @@ document.addEventListener('DOMContentLoaded', () => {
     function buildSubtitle(server) {
         const m = server.metadata || {};
         const parts = [];
-        if (m.customer) parts.push(m.customer);
-        if (m.so_number) parts.push(m.so_number);
-        if (m.server_name) parts.push(m.server_name);
+        if (m.customer && m.customer.trim()) parts.push(m.customer.trim());
+        if (m.server_name && m.server_name.trim()) parts.push(m.server_name.trim());
+        if (parts.length === 0 && server.model && server.model !== 'N/A') {
+            parts.push(server.model.trim());
+        }
         return parts.join(' • ');
+    }
+
+    function buildTreeSubtitleLines(server) {
+        const m = server.metadata || {};
+        const customer = (m.customer || '').trim();
+        const serverName = (m.server_name || '').trim();
+        const lines = [];
+        if (customer) lines.push(customer);
+        if (serverName) lines.push(serverName);
+        if (lines.length === 0 && server.model && server.model !== 'N/A') {
+            lines.push(server.model.trim());
+        }
+        return lines;
     }
 
     function createServerRowLi(server, displaySerial, isChild = false) {
@@ -256,14 +328,18 @@ document.addEventListener('DOMContentLoaded', () => {
             statusDotHtml = `<span class="status-dot linked-offline" title="Powiązany MAC (${escapeHtml(linkedMac)}) - poza siecią DHCP"></span>`;
         }
 
-        const subtitle = buildSubtitle(server);
-        const subHtml = subtitle ? `<span class="item-sub" title="${escapeHtml(subtitle)}">${escapeHtml(subtitle)}</span>` : '';
+        const subtitleLines = buildTreeSubtitleLines(server);
+        const subHtml = subtitleLines
+            .map(line => `<span class="item-sub" title="${escapeHtml(line)}">${escapeHtml(line)}</span>`)
+            .join('');
 
         const rowDiv = document.createElement('div');
         rowDiv.className = `tree-row${isChild ? ' child-row' : ''}${isSelected ? ' active' : ''}`;
         rowDiv.innerHTML = `
             <div class="tree-item-left">
-                <input type="checkbox" class="tree-checkbox server-item-check" ${isChecked ? 'checked' : ''} title="Zaznacz do edycji grupowej">
+                <label class="tree-check-hitarea" title="Zaznacz do edycji grupowej">
+                    <input type="checkbox" class="tree-checkbox server-item-check" ${isChecked ? 'checked' : ''}>
+                </label>
                 <div class="tree-item-info">
                     <div class="item-serial-row">
                         <span class="item-serial">${escapeHtml(displaySerial)}</span>
@@ -275,8 +351,9 @@ document.addEventListener('DOMContentLoaded', () => {
             <span class="item-date">${escapeHtml(server.date.split(' ')[0])}</span>
         `;
 
+        const hitArea = rowDiv.querySelector('.tree-check-hitarea');
         const checkbox = rowDiv.querySelector('.server-item-check');
-        checkbox.addEventListener('click', (e) => {
+        hitArea.addEventListener('click', (e) => {
             e.stopPropagation();
         });
         checkbox.addEventListener('change', (e) => {
@@ -340,7 +417,9 @@ document.addEventListener('DOMContentLoaded', () => {
             headerDiv.className = 'tree-group-header';
             headerDiv.innerHTML = `
                 <div class="tree-group-left">
-                    <input type="checkbox" class="tree-checkbox group-check" ${allGroupChecked ? 'checked' : ''} title="Zaznacz całą grupę">
+                    <label class="tree-check-hitarea" title="Zaznacz całą grupę">
+                        <input type="checkbox" class="tree-checkbox group-check" ${allGroupChecked ? 'checked' : ''}>
+                    </label>
                     <span>${escapeHtml(groupName)} <small style="color: #86868b; font-weight: 500;">(${items.length})</small></span>
                 </div>
                 <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="#86868b" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="transform: rotate(${isExpanded ? '90deg' : '0deg'}); transition: transform 0.15s ease;">
@@ -348,9 +427,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 </svg>
             `;
 
+            const groupHitArea = headerDiv.querySelector('.tree-check-hitarea');
             const groupCheckbox = headerDiv.querySelector('.group-check');
             groupCheckbox.indeterminate = someGroupChecked;
-            groupCheckbox.addEventListener('click', (e) => {
+            groupHitArea.addEventListener('click', (e) => {
                 e.stopPropagation();
             });
             groupCheckbox.addEventListener('change', (e) => {
@@ -532,23 +612,52 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function updateMetadataDirtyState() {
+        if (!metadataDirtyIndicator) return;
+        const isDirty =
+            (metaCustomerInput.value || '') !== (savedServerMetadata.customer || '') ||
+            (metaSOInput.value || '') !== (savedServerMetadata.so_number || '') ||
+            (metaServerNameInput.value || '') !== (savedServerMetadata.server_name || '') ||
+            (metaNotesInput.value || '') !== (savedServerMetadata.notes || '');
+        if (isDirty) {
+            metadataDirtyIndicator.classList.remove('hidden');
+        } else {
+            metadataDirtyIndicator.classList.add('hidden');
+        }
+    }
+
+    [metaCustomerInput, metaSOInput, metaServerNameInput, metaNotesInput].forEach(el => {
+        if (el) {
+            el.addEventListener('input', updateMetadataDirtyState);
+        }
+    });
+
     async function loadServerData(serial, run) {
         try {
             const res = await fetch(`/api/servers/${encodeSerial(serial)}/runs/${run}`);
             if (!res.ok) throw new Error('Data not found');
             const data = await res.json();
 
-            if (data.metadata) {
-                document.getElementById('metaCustomer').value = data.metadata.customer || '';
-                document.getElementById('metaSO').value = data.metadata.so_number || '';
-                document.getElementById('metaServerName').value = data.metadata.server_name || '';
-                document.getElementById('metaNotes').value = data.metadata.notes || '';
-            }
+            const meta = data.metadata || {};
+            savedServerMetadata = {
+                customer: meta.customer || '',
+                so_number: meta.so_number || '',
+                server_name: meta.server_name || '',
+                notes: meta.notes || ''
+            };
+            metaCustomerInput.value = savedServerMetadata.customer;
+            metaSOInput.value = savedServerMetadata.so_number;
+            metaServerNameInput.value = savedServerMetadata.server_name;
+            metaNotesInput.value = savedServerMetadata.notes;
+            updateMetadataDirtyState();
 
             const serverIdx = allServers.findIndex(s => s.serial === serial);
             if (serverIdx !== -1) {
                 if (data.metadata) allServers[serverIdx].metadata = data.metadata;
                 if (data.linked_mac !== undefined) allServers[serverIdx].linked_mac = data.linked_mac;
+                if (data.system && data.system.model && data.system.model !== 'N/A') {
+                    allServers[serverIdx].model = data.system.model;
+                }
             }
 
             populateGroup('sysData', data.system);
@@ -556,8 +665,9 @@ document.addEventListener('DOMContentLoaded', () => {
             populateGroup('mbData', data.motherboard);
 
             populateGroup('ramData', {
-                'Zajęte sloty': data.ram.used,
-                'Wszystkie sloty': data.ram.total
+                'Całkowita pamięć': (data.ram && data.ram.capacity) ? data.ram.capacity : 'N/A',
+                'Zajęte sloty': data.ram ? data.ram.used : 'N/A',
+                'Wszystkie sloty': data.ram ? data.ram.total : 'N/A'
             });
 
             populateGroup('bmcData', {
@@ -636,7 +746,47 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- Single Server Metadata Save ---
+    // --- Single Server Metadata Save & Copy/Paste ---
+    copyMetadataBtn.addEventListener('click', () => {
+        if (!currentSelectedSerial) return;
+        copiedMetadata = {
+            sourceSerial: currentSelectedSerial,
+            customer: document.getElementById('metaCustomer').value,
+            so_number: document.getElementById('metaSO').value,
+            server_name: document.getElementById('metaServerName').value,
+            notes: document.getElementById('metaNotes').value
+        };
+        try {
+            localStorage.setItem('copiedServerMetadata', JSON.stringify(copiedMetadata));
+        } catch (e) {}
+
+        updateCopyPasteState();
+        copyMetadataBtnLabel.textContent = 'Skopiowano!';
+        setTimeout(() => {
+            copyMetadataBtnLabel.textContent = 'Kopiuj';
+        }, 1200);
+    });
+
+    pasteMetadataBtn.addEventListener('click', () => {
+        if (!copiedMetadata) return;
+        metaCustomerInput.value = copiedMetadata.customer || '';
+        metaSOInput.value = copiedMetadata.so_number || '';
+        metaServerNameInput.value = copiedMetadata.server_name || '';
+        metaNotesInput.value = copiedMetadata.notes || '';
+        updateMetadataDirtyState();
+    });
+
+    copyToCheckedBtn.addEventListener('click', () => {
+        if (checkedSerials.size < 1) return;
+        const currentMeta = {
+            customer: document.getElementById('metaCustomer').value,
+            so_number: document.getElementById('metaSO').value,
+            server_name: document.getElementById('metaServerName').value,
+            notes: document.getElementById('metaNotes').value
+        };
+        openBatchEditModal(currentMeta, currentSelectedSerial);
+    });
+
     document.getElementById('saveMetadataBtn').addEventListener('click', async () => {
         if (!currentSelectedSerial || !currentSelectedRun) return;
 
@@ -659,6 +809,9 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             if (!res.ok) throw new Error('Failed to save metadata');
+
+            savedServerMetadata = { ...payload };
+            updateMetadataDirtyState();
 
             const srv = allServers.find(s => s.serial === currentSelectedSerial);
             if (srv) srv.metadata = { ...payload };
@@ -758,21 +911,60 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    function openBatchEditModal() {
-        if (checkedSerials.size < 2) return;
+    function fillBatchModalFields(metaObj) {
+        batchFields.forEach(f => {
+            const inputEl = document.getElementById(f.inputId);
+            const clearCb = document.querySelector(`.batch-clear-check[data-target="${f.inputId}"]`);
+            if (clearCb) clearCb.checked = false;
+            if (inputEl) {
+                inputEl.disabled = false;
+                inputEl.placeholder = 'Bez zmian...';
+                inputEl.value = (metaObj && metaObj[f.key]) ? metaObj[f.key] : '';
+            }
+        });
+    }
+
+    function openBatchEditModal(prefillMeta = null, prefillSourceSerial = null) {
+        if (checkedSerials.size < 1) return;
         const serialList = Array.from(checkedSerials);
         batchModalCount.textContent = serialList.length;
         batchSerialChips.innerHTML = serialList.map(s => `<span class="serial-chip">${escapeHtml(s)}</span>`).join('');
 
-        batchFields.forEach(f => {
-            const inputEl = document.getElementById(f.inputId);
-            inputEl.value = '';
-            inputEl.disabled = false;
-            inputEl.placeholder = 'Bez zmian...';
+        fillBatchModalFields(prefillMeta);
+
+        // Populate source server selector
+        const sourceItems = [];
+        if (copiedMetadata) {
+            sourceItems.push({
+                value: '__clipboard__',
+                label: `📋 Schowek (${copiedMetadata.sourceSerial || 'skopiowane'})`
+            });
+        }
+        allServers.forEach(s => {
+            const sub = buildSubtitle(s);
+            sourceItems.push({
+                value: s.serial,
+                label: sub ? `${s.serial} (${sub})` : s.serial
+            });
         });
-        document.querySelectorAll('.batch-clear-check').forEach(cb => {
-            cb.checked = false;
-        });
+
+        populateCustomSelect(
+            batchSourceMenu,
+            batchSourceLabel,
+            sourceItems,
+            prefillSourceSerial || '',
+            (selectedVal) => {
+                if (selectedVal === '__clipboard__' && copiedMetadata) {
+                    fillBatchModalFields(copiedMetadata);
+                } else {
+                    const srcSrv = allServers.find(s => s.serial === selectedVal);
+                    if (srcSrv && srcSrv.metadata) {
+                        fillBatchModalFields(srcSrv.metadata);
+                    }
+                }
+            },
+            'Wybierz serwer źródłowy...'
+        );
 
         batchEditModal.classList.remove('hidden');
     }
@@ -781,7 +973,10 @@ document.addEventListener('DOMContentLoaded', () => {
         batchEditModal.classList.add('hidden');
     }
 
-    batchEditBtn.addEventListener('click', openBatchEditModal);
+    batchEditBtn.addEventListener('click', () => {
+        if (checkedSerials.size < 2) return;
+        openBatchEditModal(null, null);
+    });
     closeBatchModalBtn.addEventListener('click', closeBatchEditModal);
     cancelBatchModalBtn.addEventListener('click', closeBatchEditModal);
     batchEditModal.addEventListener('click', (e) => {
@@ -789,7 +984,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     saveBatchMetadataBtn.addEventListener('click', async () => {
-        if (checkedSerials.size < 2) return;
+        if (checkedSerials.size < 1) return;
 
         const updates = {};
         batchFields.forEach(f => {
@@ -846,6 +1041,32 @@ document.addEventListener('DOMContentLoaded', () => {
     const unlinkIpmiBtn = document.getElementById('unlinkIpmiBtn');
     const refreshModalDhcpBtn = document.getElementById('refreshModalDhcpBtn');
     const linkModalDhcpBody = document.getElementById('linkModalDhcpBody');
+    const linkModalMacSearch = document.getElementById('linkModalMacSearch');
+    const clearLinkMacSearchBtn = document.getElementById('clearLinkMacSearchBtn');
+
+    function normalizeMacString(str) {
+        return (str || '').replace(/[:\-\s]/g, '').toLowerCase();
+    }
+
+    function updateClearLinkMacButton() {
+        if (linkModalMacSearch.value.length > 0) {
+            clearLinkMacSearchBtn.classList.remove('hidden');
+        } else {
+            clearLinkMacSearchBtn.classList.add('hidden');
+        }
+    }
+
+    linkModalMacSearch.addEventListener('input', () => {
+        updateClearLinkMacButton();
+        renderLinkModalContent();
+    });
+
+    clearLinkMacSearchBtn.addEventListener('click', () => {
+        linkModalMacSearch.value = '';
+        updateClearLinkMacButton();
+        renderLinkModalContent();
+        linkModalMacSearch.focus();
+    });
 
     function renderLinkModalContent() {
         if (!currentSelectedSerial) return;
@@ -860,19 +1081,27 @@ document.addEventListener('DOMContentLoaded', () => {
             unlinkIpmiBtn.classList.add('hidden');
         }
 
+        const normQuery = normalizeMacString(linkModalMacSearch.value);
+        const filteredLeases = currentDhcpLeases.filter(lease => {
+            if (!normQuery) return true;
+            return normalizeMacString(lease.mac).includes(normQuery);
+        });
+
         linkModalDhcpBody.innerHTML = '';
-        if (currentDhcpLeases.length === 0) {
+        if (filteredLeases.length === 0) {
             linkModalDhcpBody.innerHTML = `
                 <tr>
                     <td colspan="6" style="text-align: center; color: #86868b; padding: 20px;">
-                        Brak aktywnych dzierżaw w zakładce Adresy IP DHCP.
+                        ${currentDhcpLeases.length === 0
+                            ? 'Brak aktywnych dzierżaw w zakładce Adresy IP DHCP.'
+                            : 'Brak adresów MAC pasujących do wyszukiwania.'}
                     </td>
                 </tr>
             `;
             return;
         }
 
-        currentDhcpLeases.forEach(lease => {
+        filteredLeases.forEach(lease => {
             const isLinkedToCurrent = currentMac && lease.mac.toLowerCase() === currentMac.toLowerCase();
             const linkedServerObj = allServers.find(s => (s.linked_mac || '').toLowerCase() === lease.mac.toLowerCase());
             const linkedSerialStr = linkedServerObj ? linkedServerObj.serial : (lease.linked_serial || '');
@@ -924,6 +1153,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function openLinkIpmiModal() {
         if (!currentSelectedSerial) return;
+        linkModalMacSearch.value = '';
+        updateClearLinkMacButton();
         await loadDhcpLeases();
         renderLinkModalContent();
         linkIpmiModal.classList.remove('hidden');
@@ -1020,6 +1251,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Initial load
     (async () => {
+        updateCopyPasteState();
         await loadDhcpLeases();
         await loadServers();
     })();

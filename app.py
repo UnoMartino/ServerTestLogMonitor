@@ -100,15 +100,37 @@ def parse_raport(content: str):
     result['cpu'] = processors
     
     # PAMIEC RAM
-    ram = '\n'.join(sections.get('PAMIEC RAM', []))
+    ram_lines = sections.get('PAMIEC RAM', [])
+    ram = '\n'.join(ram_lines)
     ram_match = re.search(r'Ilosc zainstalowanej pamieci:\s+(\d+)szt\.\s+na\s+(\d+)\s+dostępnych slotów', ram)
+    
+    total_gb = 0.0
+    for rline in ram_lines:
+        m_size = re.match(r'^Rozmiar:\s+(\d+(?:\.\d+)?)\s*(GB|MB|TB)', rline.strip(), re.IGNORECASE)
+        if m_size:
+            val = float(m_size.group(1))
+            unit = m_size.group(2).upper()
+            if unit == 'MB':
+                total_gb += val / 1024.0
+            elif unit == 'TB':
+                total_gb += val * 1024.0
+            else:
+                total_gb += val
+
+    if total_gb > 0:
+        ram_capacity = f"{int(total_gb)} GB" if total_gb.is_integer() else f"{total_gb:.1f} GB"
+    else:
+        mem_fallback = re.search(r'^(?:Mem|Total):\s+(\S+)', ram, re.MULTILINE)
+        ram_capacity = mem_fallback.group(1).strip() if mem_fallback else 'N/A'
+
     if ram_match:
         result['ram'] = {
             'used': ram_match.group(1),
-            'total': ram_match.group(2)
+            'total': ram_match.group(2),
+            'capacity': ram_capacity
         }
     else:
-        result['ram'] = {'used': 'N/A', 'total': 'N/A'}
+        result['ram'] = {'used': 'N/A', 'total': 'N/A', 'capacity': ram_capacity}
         
     # BMC/IPMI
     bmc = '\n'.join(sections.get('BMC/IPMI', []))
@@ -242,6 +264,21 @@ def decode_serial(serial_b64: str):
     serial_b64 += "=" * ((4 - len(serial_b64) % 4) % 4)
     return base64.b64decode(serial_b64).decode('utf-8')
 
+def get_system_model(run_dir: str) -> str:
+    if not run_dir:
+        return ""
+    raport_path = os.path.join(run_dir, "1-raport-glowny.txt")
+    if not os.path.exists(raport_path):
+        return ""
+    try:
+        with open(raport_path, 'r', errors='ignore') as f:
+            content = f.read(4096)
+        parsed = parse_raport(content)
+        model = parsed.get('system', {}).get('model', '')
+        return "" if model == "N/A" else model
+    except Exception:
+        return ""
+
 @app.get("/api/servers")
 def list_servers():
     if not os.path.exists(FTP_ROOT):
@@ -265,12 +302,13 @@ def list_servers():
                 pass
                 
         linked_mac = links.get(serial, "")
+        system_model = get_system_model(latest_run)
         if latest_run:
             run_name = os.path.basename(latest_run)
             date_str = format_run_date(run_name)
-            server_list.append({"serial": serial, "date": date_str, "raw": run_name, "metadata": metadata, "linked_mac": linked_mac})
+            server_list.append({"serial": serial, "date": date_str, "raw": run_name, "metadata": metadata, "linked_mac": linked_mac, "model": system_model})
         else:
-            server_list.append({"serial": serial, "date": "No runs", "raw": "", "metadata": metadata, "linked_mac": linked_mac})
+            server_list.append({"serial": serial, "date": "No runs", "raw": "", "metadata": metadata, "linked_mac": linked_mac, "model": system_model})
                 
     server_list.sort(key=lambda x: x["raw"], reverse=True)
     return {"servers": server_list}
