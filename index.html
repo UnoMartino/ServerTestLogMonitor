@@ -12,7 +12,7 @@
             <h1>Server Monitor</h1>
             <div style="display: flex; align-items: center; gap: 16px;">
                 <div class="tabs">
-                    <button class="tab-btn active" data-tab="dashboard">Dashboard</button>
+                    <button class="tab-btn active" data-tab="dashboard">Serwery</button>
                     <button class="tab-btn" data-tab="dhcp">Adresy IP DHCP</button>
                 </div>
                 <a href="http://192.168.2.95:26000" class="btn" style="text-decoration: none;" target="_blank">PXE Boot</a>
@@ -34,6 +34,13 @@
                             </svg>
                             <span>Edytuj</span>
                             <span id="batchCountBadge" class="toolbar-badge hidden">0</span>
+                        </button>
+                        <button id="serverCheckerBtn" class="toolbar-btn" disabled title="Zaznacz serwery na liście, aby sprawdzić ich konfigurację sprzętową">
+                            <svg class="toolbar-svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+                                <path d="M2.5 8.5l3.5 3.5 7.5-7.5" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                            <span>Sprawdzarka</span>
+                            <span id="checkerCountBadge" class="toolbar-badge hidden">0</span>
                         </button>
                         <button id="linkIpmiBtn" class="toolbar-btn" disabled title="Wybierz serwer z listy, aby powiązać go z adresem MAC IPMI">
                             <svg class="toolbar-svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -169,7 +176,16 @@
                         </div>
 
                         <div class="card">
-                            <h2>System</h2>
+                            <div class="card-header" style="margin-bottom: 10px;">
+                                <h2>System</h2>
+                                <button type="button" id="compareWithCheckedBtn" class="toolbar-btn" disabled title="Zaznacz serwery na liście po lewej, aby porównać ich konfigurację z tym serwerem">
+                                    <svg class="toolbar-svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+                                        <path d="M6 3H3v10h3M10 3h3v10h-3M8 2v12" stroke-linecap="round" stroke-linejoin="round"/>
+                                    </svg>
+                                    <span>Porównaj</span>
+                                    <span id="compareCheckedBadge" class="toolbar-badge hidden">0</span>
+                                </button>
+                            </div>
                             <div id="sysData" class="data-group"></div>
                         </div>
                         <div class="card">
@@ -441,6 +457,87 @@
             </div>
             <div class="modal-footer">
                 <button id="cancelLinkIpmiModalBtn" class="btn btn-secondary">Zamknij</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Server Hardware Checker / Comparator Modal -->
+    <div id="serverCheckerModal" class="modal-overlay hidden">
+        <div class="modal-card modal-card-xl">
+            <div class="modal-header">
+                <h3>Sprawdzarka konfiguracji serwerów</h3>
+                <button id="closeCheckerModalBtn" class="modal-close-btn" title="Zamknij">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="batch-info-box">
+                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+                        <div>Zaznaczone serwery do sprawdzenia (<strong id="checkerModalCount">0</strong>):</div>
+                        <span id="checkerSourceBadge" class="copied-source-badge hidden"></span>
+                    </div>
+                    <div id="checkerSerialChips" class="serial-chips"></div>
+                </div>
+
+                <p class="modal-hint">
+                    Wprowadź oczekiwane parametry sprzętowe poniżej lub użyj przycisku <strong>Porównaj</strong> na karcie wybranego serwera. Puste pola są ignorowane podczas sprawdzania.
+                </p>
+
+                <div class="checker-form-grid">
+                    <div class="form-group">
+                        <label for="checkBiosVersion">Wersja BIOS</label>
+                        <input type="text" id="checkBiosVersion" class="styled-input" placeholder="np. 2.8 (puste = ignoruj)">
+                    </div>
+                    <div class="form-group">
+                        <label for="checkBmcFirmware">Wersja firmware IPMI</label>
+                        <input type="text" id="checkBmcFirmware" class="styled-input" placeholder="np. 1.05.19 (puste = ignoruj)">
+                    </div>
+                    <div class="form-group checker-col-wide">
+                        <label for="checkCpuModel">Procesor (model)</label>
+                        <input type="text" id="checkCpuModel" class="styled-input" placeholder="np. GOLD 6548N (puste = ignoruj)">
+                    </div>
+                    <div class="form-group">
+                        <label for="checkCpuCount">Ilość procesorów</label>
+                        <input type="number" min="0" id="checkCpuCount" class="styled-input" placeholder="np. 2">
+                    </div>
+                    <div class="form-group">
+                        <label for="checkRamSticks">Ilość kości RAM</label>
+                        <input type="number" min="0" id="checkRamSticks" class="styled-input" placeholder="np. 8">
+                    </div>
+                    <div class="form-group">
+                        <label for="checkSataCount">Ilość dysków SATA/SAS</label>
+                        <input type="number" min="0" id="checkSataCount" class="styled-input" placeholder="np. 0">
+                    </div>
+                    <div class="form-group">
+                        <label for="checkNvmeCount">Ilość dysków NVMe</label>
+                        <input type="number" min="0" id="checkNvmeCount" class="styled-input" placeholder="np. 4">
+                    </div>
+                </div>
+
+                <div class="checker-results-header">
+                    <div id="checkerSummaryStats" class="checker-summary-stats"></div>
+                    <button type="button" id="clearCheckerFieldsBtn" class="toolbar-btn">Wyczyść kryteria</button>
+                </div>
+
+                <div class="table-container checker-table-wrap">
+                    <table class="styled-table checker-table">
+                        <thead>
+                            <tr>
+                                <th>Serwer (SN)</th>
+                                <th>Status</th>
+                                <th>Wersja BIOS</th>
+                                <th>Firmware IPMI</th>
+                                <th>Procesor</th>
+                                <th>Ilość CPU</th>
+                                <th>Kości RAM</th>
+                                <th>Dyski SATA/SAS</th>
+                                <th>Dyski NVMe</th>
+                            </tr>
+                        </thead>
+                        <tbody id="checkerResultsBody"></tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="cancelCheckerModalBtn" class="btn btn-secondary">Zamknij</button>
             </div>
         </div>
     </div>

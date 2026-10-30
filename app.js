@@ -26,6 +26,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let visibleSerials = [];
     let copiedMetadata = null;
     let savedServerMetadata = { customer: '', so_number: '', server_name: '', notes: '' };
+    let currentServerSpecs = null;
 
     try {
         const savedClip = localStorage.getItem('copiedServerMetadata');
@@ -43,6 +44,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const refreshServersBtn = document.getElementById('refreshServersBtn');
     const batchEditBtn = document.getElementById('batchEditBtn');
     const batchCountBadge = document.getElementById('batchCountBadge');
+    const serverCheckerBtn = document.getElementById('serverCheckerBtn');
+    const checkerCountBadge = document.getElementById('checkerCountBadge');
+    const compareWithCheckedBtn = document.getElementById('compareWithCheckedBtn');
+    const compareCheckedBadge = document.getElementById('compareCheckedBadge');
     const linkIpmiBtn = document.getElementById('linkIpmiBtn');
     const selectAllVisibleCheck = document.getElementById('selectAllVisibleCheck');
     const serverCountLabel = document.getElementById('serverCountLabel');
@@ -231,11 +236,31 @@ document.addEventListener('DOMContentLoaded', () => {
     function updateToolbarState() {
         const count = checkedSerials.size;
         batchEditBtn.disabled = count < 2;
-        if (count > 0) {
+        if (count >= 2) {
             batchCountBadge.textContent = count;
             batchCountBadge.classList.remove('hidden');
         } else {
             batchCountBadge.classList.add('hidden');
+        }
+
+        if (serverCheckerBtn) {
+            serverCheckerBtn.disabled = count < 1;
+            if (count > 0) {
+                checkerCountBadge.textContent = count;
+                checkerCountBadge.classList.remove('hidden');
+            } else {
+                checkerCountBadge.classList.add('hidden');
+            }
+        }
+
+        if (compareWithCheckedBtn) {
+            compareWithCheckedBtn.disabled = count < 1 || !currentSelectedSerial;
+            if (count > 0) {
+                compareCheckedBadge.textContent = count;
+                compareCheckedBadge.classList.remove('hidden');
+            } else {
+                compareCheckedBadge.classList.add('hidden');
+            }
         }
 
         linkIpmiBtn.disabled = !currentSelectedSerial;
@@ -651,6 +676,8 @@ document.addEventListener('DOMContentLoaded', () => {
             metaNotesInput.value = savedServerMetadata.notes;
             updateMetadataDirtyState();
 
+            currentServerSpecs = data.specs || null;
+
             const serverIdx = allServers.findIndex(s => s.serial === serial);
             if (serverIdx !== -1) {
                 if (data.metadata) allServers[serverIdx].metadata = data.metadata;
@@ -658,7 +685,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (data.system && data.system.model && data.system.model !== 'N/A') {
                     allServers[serverIdx].model = data.system.model;
                 }
+                if (data.specs) {
+                    allServers[serverIdx].specs = data.specs;
+                }
             }
+            updateToolbarState();
 
             populateGroup('sysData', data.system);
             populateGroup('chassisData', data.chassis);
@@ -1181,6 +1212,244 @@ document.addEventListener('DOMContentLoaded', () => {
         await loadDhcpLeases();
         renderLinkModalContent();
     });
+
+    // --- Server Hardware Checker / Comparator Modal Logic ---
+    const serverCheckerModal = document.getElementById('serverCheckerModal');
+    const closeCheckerModalBtn = document.getElementById('closeCheckerModalBtn');
+    const cancelCheckerModalBtn = document.getElementById('cancelCheckerModalBtn');
+    const checkerModalCount = document.getElementById('checkerModalCount');
+    const checkerSerialChips = document.getElementById('checkerSerialChips');
+    const checkerSourceBadge = document.getElementById('checkerSourceBadge');
+    const checkerSummaryStats = document.getElementById('checkerSummaryStats');
+    const checkerResultsBody = document.getElementById('checkerResultsBody');
+    const clearCheckerFieldsBtn = document.getElementById('clearCheckerFieldsBtn');
+
+    const checkBiosVersion = document.getElementById('checkBiosVersion');
+    const checkBmcFirmware = document.getElementById('checkBmcFirmware');
+    const checkCpuModel = document.getElementById('checkCpuModel');
+    const checkCpuCount = document.getElementById('checkCpuCount');
+    const checkRamSticks = document.getElementById('checkRamSticks');
+    const checkSataCount = document.getElementById('checkSataCount');
+    const checkNvmeCount = document.getElementById('checkNvmeCount');
+
+    const checkerInputs = [
+        checkBiosVersion,
+        checkBmcFirmware,
+        checkCpuModel,
+        checkCpuCount,
+        checkRamSticks,
+        checkSataCount,
+        checkNvmeCount
+    ];
+
+    function fillCheckerFieldsFromSpecs(specs) {
+        if (!specs) {
+            checkerInputs.forEach(inp => { if (inp) inp.value = ''; });
+            return;
+        }
+        checkBiosVersion.value = (specs.bios_version && specs.bios_version !== 'N/A') ? String(specs.bios_version) : '';
+        checkBmcFirmware.value = (specs.bmc_firmware && specs.bmc_firmware !== 'N/A') ? String(specs.bmc_firmware) : '';
+        checkCpuModel.value = (specs.cpu_model && specs.cpu_model !== 'N/A') ? String(specs.cpu_model) : '';
+        checkCpuCount.value = (specs.cpu_count !== undefined && specs.cpu_count !== null) ? String(specs.cpu_count) : '';
+        checkRamSticks.value = (specs.ram_sticks && specs.ram_sticks !== 'N/A') ? String(specs.ram_sticks) : '';
+        checkSataCount.value = (specs.sata_count !== undefined && specs.sata_count !== null) ? String(specs.sata_count) : '';
+        checkNvmeCount.value = (specs.nvme_count !== undefined && specs.nvme_count !== null) ? String(specs.nvme_count) : '';
+    }
+
+    function evaluateServerAgainstCriteria(specs, criteria) {
+        const s = specs || {
+            bios_version: 'N/A',
+            bmc_firmware: 'N/A',
+            cpu_model: 'N/A',
+            cpu_count: 0,
+            ram_sticks: 'N/A',
+            sata_count: 0,
+            nvme_count: 0
+        };
+
+        const checkField = (actualVal, expectedRaw, mode = 'exact') => {
+            const exp = (expectedRaw || '').trim();
+            if (!exp) {
+                return { active: false, match: true, actual: actualVal, expected: '' };
+            }
+            const actStr = String(actualVal ?? 'N/A').trim();
+            let isMatch = false;
+            if (mode === 'substring') {
+                isMatch = actStr.toLowerCase().includes(exp.toLowerCase());
+            } else if (mode === 'number') {
+                const actNum = Number(actStr);
+                const expNum = Number(exp);
+                isMatch = !Number.isNaN(actNum) && !Number.isNaN(expNum) && actStr !== 'N/A' && actStr !== '' && actNum === expNum;
+            } else {
+                isMatch = actStr.toLowerCase() === exp.toLowerCase();
+            }
+            return { active: true, match: isMatch, actual: actStr, expected: exp };
+        };
+
+        const fields = {
+            bios: checkField(s.bios_version, criteria.bios, 'exact'),
+            bmc: checkField(s.bmc_firmware, criteria.bmc, 'exact'),
+            cpuModel: checkField(s.cpu_model, criteria.cpuModel, 'substring'),
+            cpuCount: checkField(s.cpu_count, criteria.cpuCount, 'number'),
+            ramSticks: checkField(s.ram_sticks, criteria.ramSticks, 'number'),
+            sataCount: checkField(s.sata_count, criteria.sataCount, 'number'),
+            nvmeCount: checkField(s.nvme_count, criteria.nvmeCount, 'number')
+        };
+
+        const activeChecks = Object.values(fields).filter(f => f.active);
+        const hasAnyCriteria = activeChecks.length > 0;
+        const allMatch = activeChecks.every(f => f.match);
+
+        return {
+            hasAnyCriteria,
+            allMatch,
+            fields
+        };
+    }
+
+    function renderCheckerCell(fieldResult) {
+        const actualText = escapeHtml(fieldResult.actual ?? 'N/A');
+        if (!fieldResult.active) {
+            return `<td>${actualText}</td>`;
+        }
+        if (fieldResult.match) {
+            return `<td class="checker-cell-match">${actualText}</td>`;
+        }
+        return `
+            <td class="checker-cell-mismatch">
+                ${actualText}
+                <span class="checker-expected-sub">oczekiwano: ${escapeHtml(fieldResult.expected)}</span>
+            </td>
+        `;
+    }
+
+    function renderCheckerResults() {
+        const serialList = Array.from(checkedSerials);
+        checkerModalCount.textContent = serialList.length;
+        checkerSerialChips.innerHTML = serialList.map(s => `<span class="serial-chip">${escapeHtml(s)}</span>`).join('');
+
+        const criteria = {
+            bios: checkBiosVersion.value,
+            bmc: checkBmcFirmware.value,
+            cpuModel: checkCpuModel.value,
+            cpuCount: checkCpuCount.value,
+            ramSticks: checkRamSticks.value,
+            sataCount: checkSataCount.value,
+            nvmeCount: checkNvmeCount.value
+        };
+
+        let okCount = 0;
+        let errCount = 0;
+        let hasAnyCriteriaGlobal = false;
+
+        const rowsHtml = serialList.map(serial => {
+            const srv = allServers.find(s => s.serial === serial);
+            const evalRes = evaluateServerAgainstCriteria(srv ? srv.specs : null, criteria);
+            if (evalRes.hasAnyCriteria) {
+                hasAnyCriteriaGlobal = true;
+                if (evalRes.allMatch) okCount++;
+                else errCount++;
+            }
+
+            let statusBadgeHtml = '<span class="checker-stat-pill neutral">Brak kryteriów</span>';
+            if (evalRes.hasAnyCriteria) {
+                statusBadgeHtml = evalRes.allMatch
+                    ? '<span class="checker-stat-pill ok">Zgodny</span>'
+                    : '<span class="checker-stat-pill err">Niezgodny</span>';
+            }
+
+            return `
+                <tr>
+                    <td style="font-weight: 600; font-family: monospace;">${escapeHtml(serial)}</td>
+                    <td>${statusBadgeHtml}</td>
+                    ${renderCheckerCell(evalRes.fields.bios)}
+                    ${renderCheckerCell(evalRes.fields.bmc)}
+                    ${renderCheckerCell(evalRes.fields.cpuModel)}
+                    ${renderCheckerCell(evalRes.fields.cpuCount)}
+                    ${renderCheckerCell(evalRes.fields.ramSticks)}
+                    ${renderCheckerCell(evalRes.fields.sataCount)}
+                    ${renderCheckerCell(evalRes.fields.nvmeCount)}
+                </tr>
+            `;
+        }).join('');
+
+        checkerResultsBody.innerHTML = rowsHtml || `
+            <tr>
+                <td colspan="9" style="text-align: center; color: #86868b; padding: 20px;">Brak zaznaczonych serwerów.</td>
+            </tr>
+        `;
+
+        if (!hasAnyCriteriaGlobal) {
+            checkerSummaryStats.innerHTML = `<span class="checker-stat-pill neutral">Wpisz przynajmniej jedno kryterium powyżej, aby zweryfikować serwery (${serialList.length})</span>`;
+        } else {
+            checkerSummaryStats.innerHTML = `
+                <span class="checker-stat-pill ok">Zgodne: ${okCount} / ${serialList.length}</span>
+                <span class="checker-stat-pill err">Niezgodne: ${errCount} / ${serialList.length}</span>
+            `;
+        }
+    }
+
+    function openServerCheckerModal(prefillSpecs = null, sourceSerial = null) {
+        if (checkedSerials.size < 1) return;
+
+        if (prefillSpecs) {
+            fillCheckerFieldsFromSpecs(prefillSpecs);
+        }
+
+        if (sourceSerial) {
+            checkerSourceBadge.textContent = `Wzorzec z serwera: ${sourceSerial}`;
+            checkerSourceBadge.classList.remove('hidden');
+        } else {
+            checkerSourceBadge.classList.add('hidden');
+        }
+
+        renderCheckerResults();
+        serverCheckerModal.classList.remove('hidden');
+    }
+
+    function closeServerCheckerModal() {
+        serverCheckerModal.classList.add('hidden');
+    }
+
+    if (serverCheckerBtn) {
+        serverCheckerBtn.addEventListener('click', () => {
+            if (checkedSerials.size < 1) return;
+            openServerCheckerModal(null, null);
+        });
+    }
+
+    if (compareWithCheckedBtn) {
+        compareWithCheckedBtn.addEventListener('click', () => {
+            if (checkedSerials.size < 1 || !currentSelectedSerial) return;
+            const srv = allServers.find(s => s.serial === currentSelectedSerial);
+            const specsToUse = currentServerSpecs || (srv ? srv.specs : null);
+            openServerCheckerModal(specsToUse, currentSelectedSerial);
+        });
+    }
+
+    if (clearCheckerFieldsBtn) {
+        clearCheckerFieldsBtn.addEventListener('click', () => {
+            fillCheckerFieldsFromSpecs(null);
+            checkerSourceBadge.classList.add('hidden');
+            renderCheckerResults();
+        });
+    }
+
+    checkerInputs.forEach(inp => {
+        if (inp) {
+            inp.addEventListener('input', () => {
+                renderCheckerResults();
+            });
+        }
+    });
+
+    if (closeCheckerModalBtn) closeCheckerModalBtn.addEventListener('click', closeServerCheckerModal);
+    if (cancelCheckerModalBtn) cancelCheckerModalBtn.addEventListener('click', closeServerCheckerModal);
+    if (serverCheckerModal) {
+        serverCheckerModal.addEventListener('click', (e) => {
+            if (e.target === serverCheckerModal) closeServerCheckerModal();
+        });
+    }
 
     // --- DHCP Leases & Password Sync Logic ---
     const dhcpTableBody = document.getElementById('dhcpTableBody');

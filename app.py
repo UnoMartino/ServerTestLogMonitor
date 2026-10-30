@@ -264,20 +264,48 @@ def decode_serial(serial_b64: str):
     serial_b64 += "=" * ((4 - len(serial_b64) % 4) % 4)
     return base64.b64decode(serial_b64).decode('utf-8')
 
-def get_system_model(run_dir: str) -> str:
+def extract_specs_from_parsed(parsed: dict) -> dict:
+    cpus = parsed.get('cpu') or []
+    unique_cpus = list(dict.fromkeys([c.strip() for c in cpus if c.strip()]))
+    cpu_model = ", ".join(unique_cpus) if unique_cpus else "N/A"
+    cpu_count = len(cpus)
+    mb = parsed.get('motherboard') or {}
+    ram = parsed.get('ram') or {}
+    disks = parsed.get('disks') or {}
+    return {
+        "bios_version": mb.get('wersja_bios', 'N/A'),
+        "bmc_firmware": parsed.get('bmc', 'N/A'),
+        "cpu_model": cpu_model,
+        "cpu_count": cpu_count,
+        "ram_sticks": ram.get('used', 'N/A'),
+        "sata_count": disks.get('sata_count', 0),
+        "nvme_count": disks.get('nvme_count', 0),
+    }
+
+def get_server_summary(run_dir: str):
+    default_specs = {
+        "bios_version": "N/A",
+        "bmc_firmware": "N/A",
+        "cpu_model": "N/A",
+        "cpu_count": 0,
+        "ram_sticks": "N/A",
+        "sata_count": 0,
+        "nvme_count": 0,
+    }
     if not run_dir:
-        return ""
+        return "", default_specs
     raport_path = os.path.join(run_dir, "1-raport-glowny.txt")
     if not os.path.exists(raport_path):
-        return ""
+        return "", default_specs
     try:
-        with open(raport_path, 'r', errors='ignore') as f:
-            content = f.read(4096)
+        with open(raport_path, 'r', encoding='utf-8', errors='ignore') as f:
+            content = f.read()
         parsed = parse_raport(content)
         model = parsed.get('system', {}).get('model', '')
-        return "" if model == "N/A" else model
+        model_str = "" if model == "N/A" else model
+        return model_str, extract_specs_from_parsed(parsed)
     except Exception:
-        return ""
+        return "", default_specs
 
 @app.get("/api/servers")
 def list_servers():
@@ -302,13 +330,13 @@ def list_servers():
                 pass
                 
         linked_mac = links.get(serial, "")
-        system_model = get_system_model(latest_run)
+        system_model, specs = get_server_summary(latest_run)
         if latest_run:
             run_name = os.path.basename(latest_run)
             date_str = format_run_date(run_name)
-            server_list.append({"serial": serial, "date": date_str, "raw": run_name, "metadata": metadata, "linked_mac": linked_mac, "model": system_model})
+            server_list.append({"serial": serial, "date": date_str, "raw": run_name, "metadata": metadata, "linked_mac": linked_mac, "model": system_model, "specs": specs})
         else:
-            server_list.append({"serial": serial, "date": "No runs", "raw": "", "metadata": metadata, "linked_mac": linked_mac, "model": system_model})
+            server_list.append({"serial": serial, "date": "No runs", "raw": "", "metadata": metadata, "linked_mac": linked_mac, "model": system_model, "specs": specs})
                 
     server_list.sort(key=lambda x: x["raw"], reverse=True)
     return {"servers": server_list}
@@ -357,6 +385,7 @@ def get_server_details(serial_b64: str, run: str):
         content = f.read()
         
     data = parse_raport(content)
+    data['specs'] = extract_specs_from_parsed(data)
     
     meta_path = os.path.join(serial_dir, "metadata.json")
     default_meta = {"customer": "", "so_number": "", "server_name": "", "notes": ""}

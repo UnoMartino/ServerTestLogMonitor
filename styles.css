@@ -93,7 +93,7 @@ h1 {
 /* --- Dashboard 2-Column Layout with Left Sidebar/Tree --- */
 .dashboard-layout {
     display: grid;
-    grid-template-columns: 340px 1fr;
+    grid-template-columns: 356px 1fr;
     gap: 24px;
     align-items: start;
 }
@@ -121,35 +121,46 @@ h1 {
 
 /* Top Action Toolbar (Comarch ERP Optima style) */
 .sidebar-toolbar {
-    display: flex;
+    display: grid;
+    grid-template-columns: 1fr 1.28fr 1.12fr 32px;
     align-items: center;
     gap: 6px;
-    padding: 10px 12px;
+    padding: 10px;
     background: rgba(0, 0, 0, 0.025);
     border-bottom: 1px solid var(--border-color);
 }
 
 .toolbar-btn {
+    position: relative;
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     gap: 5px;
     padding: 6px 10px;
-    border-radius: 7px;
-    border: 1px solid rgba(0, 0, 0, 0.14);
+    border-radius: 8px;
+    border: 1px solid rgba(0, 0, 0, 0.13);
     background: #fff;
     color: var(--text-color);
     font-size: 12.5px;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, opacity 0.15s ease;
     box-shadow: 0 1px 2px rgba(0,0,0,0.04);
     white-space: nowrap;
+    box-sizing: border-box;
+}
+
+.sidebar-toolbar .toolbar-btn {
+    width: 100%;
+    height: 32px;
+    padding: 0 7px;
+    font-size: 12px;
 }
 
 .toolbar-btn:hover:not(:disabled) {
     border-color: var(--accent-color);
     color: var(--accent-color);
-    background: rgba(0, 122, 255, 0.04);
+    background: rgba(0, 122, 255, 0.05);
 }
 
 .toolbar-btn:disabled {
@@ -160,24 +171,38 @@ h1 {
 }
 
 .toolbar-btn.icon-btn {
-    margin-left: auto;
-    padding: 6px 8px;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    margin-left: 0;
 }
 
 .toolbar-svg {
-    width: 14px;
-    height: 14px;
+    width: 13.5px;
+    height: 13.5px;
     flex-shrink: 0;
 }
 
 .toolbar-badge {
+    position: absolute;
+    top: -6px;
+    right: -5px;
     background: var(--accent-color);
     color: #fff;
-    font-size: 11px;
-    font-weight: 600;
-    padding: 1px 6px;
-    border-radius: 10px;
-    line-height: 1.3;
+    font-size: 10px;
+    font-weight: 700;
+    min-width: 17px;
+    height: 17px;
+    padding: 0 4px;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    border: 1.5px solid #fff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    box-sizing: border-box;
+    pointer-events: none;
 }
 
 /* Search & Filter Checkboxes */
@@ -1111,4 +1136,123 @@ h1 {
     margin: 16px 0 10px;
     flex-wrap: wrap;
 }
+
+/* Server Checker / Comparator Modal */
+.modal-card-xl {
+    max-width: 1080px;
+}
+
+.checker-form-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.checker-form-grid .form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.checker-form-grid label {
+    font-size: 12.5px;
+    color: #6e6e73;
+    font-weight: 500;
+}
+
+.checker-form-grid .styled-input {
+    padding: 8px 11px;
+    font-size: 13px;
+}
+
+.checker-col-wide {
+    grid-column: span 2;
+}
+
+@media (max-width: 780px) {
+    .checker-form-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    .checker-col-wide {
+        grid-column: 1 / -1;
+    }
+}
+
+.checker-results-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 10px;
+    flex-wrap: wrap;
+}
+
+.checker-summary-stats {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+    font-weight: 500;
+    flex-wrap: wrap;
+}
+
+.checker-stat-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 10px;
+    border-radius: 8px;
+    font-size: 12.5px;
+    font-weight: 600;
+}
+
+.checker-stat-pill.ok {
+    background: rgba(52, 199, 89, 0.14);
+    color: #1d7a35;
+}
+
+.checker-stat-pill.err {
+    background: rgba(255, 59, 48, 0.14);
+    color: #c9231b;
+}
+
+.checker-stat-pill.neutral {
+    background: rgba(0, 0, 0, 0.06);
+    color: #4a4a4a;
+}
+
+.checker-table-wrap {
+    max-height: 360px;
+    overflow-y: auto;
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+}
+
+.checker-table th,
+.checker-table td {
+    padding: 9px 11px;
+    font-size: 12.5px;
+}
+
+.checker-cell-match {
+    background: rgba(52, 199, 89, 0.11);
+    color: #16652b;
+    font-weight: 600;
+}
+
+.checker-cell-mismatch {
+    background: rgba(255, 59, 48, 0.13);
+    color: #b91c1c;
+    font-weight: 600;
+}
+
+.checker-expected-sub {
+    display: block;
+    font-size: 11px;
+    font-weight: 400;
+    color: #991b1b;
+    margin-top: 2px;
+}
+
 

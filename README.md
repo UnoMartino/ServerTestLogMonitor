@@ -17,8 +17,11 @@ An internal web application designed to manage, view, and parse server hardware 
   - Per-server fields for **Klient**, **SO #**, **Nazwa serwera**, and **Notatki** with an unsaved-changes indicator (yellow dot next to `Zapisz`).
   - **Copy & Paste**: Copy metadata from one server to the clipboard (`Kopiuj` / `Wklej`) or directly apply it to checked servers on the sidebar (`Kopiuj na zaznaczone`).
   - **Batch Edit (`Edycja grupowa`)**: Select multiple servers via sidebar checkboxes to bulk-update or clear metadata fields, or load values from any existing server.
+- **Server Hardware Checker & Comparator (`Sprawdzarka` / `Porównaj`)**:
+  - Verify checked servers against expected hardware parameters (**BIOS version**, **IPMI firmware**, **CPU model** & **CPU count**, **RAM module count**, **SATA/SAS disk count**, and **NVMe disk count**) with live match/mismatch highlighting.
+  - Use the **Porównaj** button on any server's `System` card to prefill all verification criteria from that server and immediately compare it against all checked servers on the list.
 - **IPMI MAC Linking & Live DHCP Status**:
-  - Link a server serial number with its IPMI MAC address (`Połącz MAC`) using a modal with colon-agnostic substring MAC search.
+  - Link a server serial number with its IPMI MAC address (`IPMI MAC`) using a modal with colon-agnostic substring MAC search.
   - When a linked server is active in DHCP, an online IPMI bar is displayed directly on the server page with its MAC, IP, direct IPMI link, and synchronized password input.
 - **Run History & Dynamic Log Viewer**: Seamlessly switch between timestamped test runs (`YYMMDD_HHMMSS`) and browse raw log files in a dynamically expanding log viewer.
 - **DHCP Monitor (`Adresy IP DHCP`)**: Live-polling DHCP leases table (auto-refreshing every 5s) showing MAC addresses, IPs, hostnames, manufacturers, IPMI links, and persistent per-MAC passwords.
@@ -83,7 +86,7 @@ http://localhost:<PORT>
 
 - **Serwery Tab (`Serwery`)**:
   - Use the left sidebar to search, filter, and select servers.
-  - Check multiple servers to perform **Edycja grupowa** (batch metadata editing) or use **Kopiuj / Wklej / Kopiuj na zaznaczone** in the **Metadata i notatki** card.
-  - Click **Połącz MAC** on the sidebar toolbar to bind the selected server to a DHCP IPMI MAC address.
+  - Check servers on the sidebar to perform **Edycja grupowa** (`Edytuj`), verify hardware configurations (`Sprawdzarka`), compare checked servers against the currently viewed server (`Porównaj`), or use **Kopiuj / Wklej / Kopiuj na zaznaczone** in the **Metadata i notatki** card.
+  - Click **IPMI MAC** on the sidebar toolbar to bind the selected server to a DHCP IPMI MAC address.
   - Switch between historical test runs and inspect log files in the **Podgląd logów** section.
 - **Adresy IP DHCP Tab (`Adresy IP DHCP`)**: View active DHCP leases (auto-refreshed every 5 seconds), open IPMI web interfaces directly, and save per-MAC IPMI passwords without losing cursor focus during reloads.
